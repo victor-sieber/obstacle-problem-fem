@@ -130,22 +130,10 @@ J(v_h)=\frac{1}{2}V^{T}AV-F^{T}V.
 $$
 
 The stiffness matrix is defined by
-
-$$
-A_{ij}
-=
-\int_0^1
-\lambda_i'(x)\lambda_j'(x)\,dx.
-$$
+$A_{ij} = \int_0^1 \lambda_i'(x)\lambda_j'(x)\,dx$.
 
 The load vector is defined by
-
-$$
-F_i
-=
-\int_0^1
-f(x)\lambda_i(x)\,dx.
-$$
+$F_i = \int_0^1 f(x)\lambda_i(x)\,dx$.
 
 For a uniform mesh with mesh size $h$, the stiffness matrix is tridiagonal with
 
