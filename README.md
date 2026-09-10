@@ -8,126 +8,195 @@ This repository implements a piecewise-linear finite element discretization of a
 
 We consider the energy functional
 
-$$
-J(v)
-=
-\frac{1}{2}\int_0^1 |v'(x)|^2\,dx
--
-\int_0^1 f(x)v(x)\,dx.
-$$
+$$ J(v) = \frac{1}{2}\int_0^1 |v'(x)|^2\,dx - \int_0^1 f(x)v(x)\,dx. $$
 
-The obstacle problem consists of minimizing this functional over the admissible set
+The admissible set is
 
-$$
-K
-=
-\left\{
-v\in H_0^1(0,1)
-:
-v\geq\psi
-\right\}.
-$$
+$$ K = \left\{v\in H_0^1(0,1) : v\geq\psi\right\}. $$
 
-Thus, the solution satisfies
+The obstacle problem consists of finding
 
-$$
-u
-=
-\operatorname*{arg\,min}_{v\in K} J(v).
-$$
+$$ u = \operatorname*{arg\,min}_{v\in K} J(v). $$
 
 The corresponding variational inequality is
 
-$$
-\int_0^1 u'(x)(v-u)'(x)\,dx
-\geq
-\int_0^1 f(x)(v-u)(x)\,dx,
-\qquad
-\forall v\in K.
-$$
+$$ \int_0^1 u'(x)(v-u)'(x)\,dx \geq \int_0^1 f(x)(v-u)(x)\,dx, \qquad \forall v\in K. $$
+
+Formally, the obstacle problem can also be expressed through the complementarity conditions
+
+$$ u-\psi\geq 0, \qquad -u''-f\geq 0, \qquad (u-\psi)(-u''-f)=0. $$
+
+Thus, in the free region where $u>\psi$, the solution satisfies
+
+$$ -u''=f, $$
+
+while in the contact region the constraint $u=\psi$ is active.
 
 ## P1 finite element discretization
 
 Let
 
-$$
-0=x_0<x_1<\dots<x_N=1
-$$
+$$ 0=x_0<x_1<\dots<x_N=1 $$
 
-be a mesh of the interval.
+be a partition of the interval into $N$ finite elements.
 
-We approximate the solution using continuous piecewise-linear finite elements. With the nodal hat basis
-$\{\lambda_i\}_{i=1}^{N-1}$, the discrete solution can be written as
+The continuous space $H_0^1(0,1)$ is approximated by the finite-dimensional space of continuous piecewise-linear functions
 
-$$
-u_h(x)
-=
-\sum_{i=1}^{N-1} U_i\lambda_i(x).
-$$
+$$ S_0^1(\Delta)=\operatorname{span}\{\lambda_1,\dots,\lambda_{N-1}\}, $$
 
-The discrete energy minimization problem becomes
+where $\lambda_i$ denotes the standard nodal hat basis function.
 
-$$
-\min_{U\geq\Psi}
-\left(
-\frac{1}{2}U^\top A U-F^\top U
-\right),
-$$
+Every discrete function can therefore be written as
 
-where the stiffness matrix is given by
+$$ v_h(x)=\sum_{i=1}^{N-1}V_i\lambda_i(x). $$
 
-$$
-A_{ij}
-=
-\int_0^1
-\lambda_i'(x)\lambda_j'(x)\,dx,
-$$
+The coefficients satisfy
 
-and the load vector by
+$$ V_i=v_h(x_i), $$
 
-$$
-F_i
-=
-\int_0^1
-f(x)\lambda_i(x)\,dx.
-$$
+so a discrete function is completely determined by its values at the interior mesh nodes.
 
-The obstacle is interpolated at the mesh nodes, giving the nodal constraints
+### Discrete obstacle
 
-$$
-U_i\geq\Psi_i=\psi(x_i).
-$$
+The obstacle is approximated by its piecewise-linear nodal interpolant
+
+$$ \psi_h=I_h\psi. $$
+
+Writing
+
+$$ \Psi_i=\psi(x_i), $$
+
+the discrete obstacle constraint becomes
+
+$$ V_i\geq\Psi_i, \qquad i=1,\dots,N-1. $$
+
+The discrete admissible set is therefore
+
+$$ K_h=\left\{v_h\in S_0^1(\Delta):v_h\geq\psi_h\right\}. $$
+
+## Matrix formulation
+
+Substituting
+
+$$ v_h(x)=\sum_{i=1}^{N-1}V_i\lambda_i(x) $$
+
+into the energy functional gives the finite-dimensional quadratic functional
+
+$$ J(v_h)=\frac{1}{2}V^\top A V-F^\top V. $$
+
+The stiffness matrix $A$ is defined by
+
+$$ A_{ij}=\int_0^1\lambda_i'(x)\lambda_j'(x)\,dx, $$
+
+and the load vector $F$ by
+
+$$ F_i=\int_0^1f(x)\lambda_i(x)\,dx. $$
+
+For a uniform mesh with mesh size $h$, the stiffness matrix has the tridiagonal form
+
+$$ A=\frac{1}{h}\begin{pmatrix}2&-1&0&\cdots&0\\-1&2&-1&\ddots&\vdots\\0&-1&2&\ddots&0\\\vdots&\ddots&\ddots&\ddots&-1\\0&\cdots&0&-1&2\end{pmatrix}. $$
+
+The discrete obstacle problem is therefore the convex quadratic optimization problem
+
+$$ \min_{V\geq\Psi}\left(\frac{1}{2}V^\top A V-F^\top V\right). $$
+
+The corresponding discrete complementarity conditions are
+
+$$ V-\Psi\geq0, \qquad AV-F\geq0, \qquad (V_i-\Psi_i)(AV-F)_i=0. $$
 
 ## Benchmark problem
 
-The implementation is tested on the example
+The implementation is tested on the example discussed in the Numerical Practicum.
+
+The domain is $[0,1]$ and the load is
+
+$$ f(x)=-1. $$
+
+For a parameter $0<\alpha<\frac{1}{2}$, the obstacle is
+
+$$ \psi(x)=x(1-x)-\frac{3}{2}\alpha^2. $$
+
+The exact solution is
 
 $$
-f(x)=-1
+u(x)=
+\begin{cases}
+\frac{x^2}{2}+(1-3\alpha)x, & 0\leq x<\alpha,\\
+\psi(x), & \alpha\leq x\leq 1-\alpha,\\
+\frac{(1-x)^2}{2}+(1-3\alpha)(1-x), & 1-\alpha<x\leq1.
+\end{cases}
 $$
 
-on the interval $[0,1]$, with obstacle
+Hence, the exact contact region is
 
-$$
-\psi(x)
-=
-x(1-x)-\frac{3}{2}\alpha^2,
-\qquad
-0<\alpha<\frac{1}{2}.
-$$
+$$ [\alpha,1-\alpha]. $$
 
-For this problem, an exact solution is available, allowing the numerical finite element solution to be compared directly with the analytical solution and its convergence to be studied.
+The availability of an exact solution allows the finite element approximation to be validated directly and its convergence under mesh refinement to be studied.
 
-## Running
+## Numerical experiments
 
-Run the benchmark example:
+The repository contains two main experiments.
+
+`experiments/run_example.py` solves the benchmark problem for a fixed mesh and compares the P1 finite element solution with the exact solution and obstacle.
+
+`experiments/convergence.py` repeats the computation for increasingly fine meshes and evaluates the numerical error.
+
+For the benchmark with $\alpha=0.2$, the observed convergence rates are approximately
+
+$$ \|u-u_h\|_{L^2}=O(h^2) $$
+
+and
+
+$$ |u-u_h|_{H^1}=O(h). $$
+
+## Project structure
+
+```text
+obstacle-problem-fem/
+├── README.md
+├── requirements.txt
+├── src/
+│   ├── __init__.py
+│   ├── fem.py
+│   ├── problem.py
+│   └── solver.py
+├── experiments/
+│   ├── run_example.py
+│   └── convergence.py
+└── figures/
+```
+
+The main files have the following roles:
+
+- `src/problem.py` defines the load, obstacle, and exact benchmark solution.
+- `src/fem.py` constructs the mesh and assembles the P1 finite element system.
+- `src/solver.py` solves the resulting bound-constrained quadratic optimization problem.
+- `experiments/run_example.py` runs and visualizes one benchmark solution.
+- `experiments/convergence.py` performs the mesh-refinement and convergence study.
+
+## Running the code
+
+Install the required Python packages with
+
+```bash
+pip install -r requirements.txt
+```
+
+Run the benchmark example with
 
 ```bash
 python experiments/run_example.py
 ```
 
-Run the convergence study:
+Run the convergence study with
 
 ```bash
 python experiments/convergence.py
 ```
+
+## Requirements
+
+- Python
+- NumPy
+- SciPy
+- Matplotlib
