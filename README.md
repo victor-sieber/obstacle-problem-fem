@@ -8,101 +8,183 @@ This repository implements a piecewise-linear finite element discretization of a
 
 We consider the energy functional
 
-$$ J(v) = \frac{1}{2}\int_0^1 |v'(x)|^2\,dx - \int_0^1 f(x)v(x)\,dx. $$
+$$
+J(v) = \frac{1}{2}\int_0^1 |v'(x)|^2\,dx - \int_0^1 f(x)v(x)\,dx.
+$$
 
 The admissible set is
 
-$$ K = \left\{v\in H_0^1(0,1) : v\geq\psi\right\}. $$
+$$
+K = \{v \in H_0^1(0,1) \mid v \geq \psi\}.
+$$
 
-The obstacle problem consists of finding
+The obstacle problem is to find the minimizer of the energy over this admissible set:
 
-$$ u = \operatorname*{arg\,min}_{v\in K} J(v). $$
+$$
+u = \mathop{\mathrm{argmin}}_{v \in K} J(v).
+$$
 
 The corresponding variational inequality is
 
-$$ \int_0^1 u'(x)(v-u)'(x)\,dx \geq \int_0^1 f(x)(v-u)(x)\,dx, \qquad \forall v\in K. $$
+$$
+\int_0^1 u'(x)(v-u)'(x)\,dx
+\geq
+\int_0^1 f(x)(v-u)(x)\,dx
+\quad \text{for all } v \in K.
+$$
 
-Formally, the obstacle problem can also be expressed through the complementarity conditions
+Formally, the obstacle problem satisfies the complementarity conditions
 
-$$ u-\psi\geq 0, \qquad -u''-f\geq 0, \qquad (u-\psi)(-u''-f)=0. $$
+$$
+u-\psi \geq 0,
+\qquad
+-u''-f \geq 0,
+\qquad
+(u-\psi)(-u''-f)=0.
+$$
 
-Thus, in the free region where $u>\psi$, the solution satisfies
+In the free region, where $u>\psi$,
 
-$$ -u''=f, $$
+$$
+-u''=f.
+$$
 
-while in the contact region the constraint $u=\psi$ is active.
+In the contact region, the obstacle constraint is active and
+
+$$
+u=\psi.
+$$
 
 ## P1 finite element discretization
 
 Let
 
-$$ 0=x_0<x_1<\dots<x_N=1 $$
+$$
+0=x_0<x_1<\cdots<x_N=1
+$$
 
 be a partition of the interval into $N$ finite elements.
 
-The continuous space $H_0^1(0,1)$ is approximated by the finite-dimensional space of continuous piecewise-linear functions
+We approximate the continuous solution using the space of continuous piecewise-linear functions that vanish at the boundary.
 
-$$ S_0^1(\Delta)=\operatorname{span}\{\lambda_1,\dots,\lambda_{N-1}\}, $$
+The nodal hat functions are denoted by
 
-where $\lambda_i$ denotes the standard nodal hat basis function.
+$$
+\lambda_1,\ldots,\lambda_{N-1}.
+$$
 
-Every discrete function can therefore be written as
+A discrete function can be written as
 
-$$ v_h(x)=\sum_{i=1}^{N-1}V_i\lambda_i(x). $$
+$$
+v_h(x)=\sum_{i=1}^{N-1} V_i\lambda_i(x).
+$$
 
-The coefficients satisfy
+Because the hat functions satisfy
 
-$$ V_i=v_h(x_i), $$
+$$
+\lambda_i(x_j)=\delta_{ij},
+$$
 
-so a discrete function is completely determined by its values at the interior mesh nodes.
+the coefficients are exactly the values at the interior mesh nodes:
 
-### Discrete obstacle
+$$
+V_i=v_h(x_i).
+$$
+
+## Discrete obstacle
 
 The obstacle is approximated by its piecewise-linear nodal interpolant
 
-$$ \psi_h=I_h\psi. $$
+$$
+\psi_h = I_h\psi.
+$$
 
-Writing
+At the interior nodes, define
 
-$$ \Psi_i=\psi(x_i), $$
+$$
+\Psi_i=\psi(x_i).
+$$
 
-the discrete obstacle constraint becomes
+The obstacle constraint becomes
 
-$$ V_i\geq\Psi_i, \qquad i=1,\dots,N-1. $$
+$$
+V_i \geq \Psi_i,
+\qquad
+i=1,\ldots,N-1.
+$$
 
-The discrete admissible set is therefore
-
-$$ K_h=\left\{v_h\in S_0^1(\Delta):v_h\geq\psi_h\right\}. $$
+Thus the discrete admissible set consists of all piecewise-linear finite element functions that lie above the interpolated obstacle.
 
 ## Matrix formulation
 
 Substituting
 
-$$ v_h(x)=\sum_{i=1}^{N-1}V_i\lambda_i(x) $$
+$$
+v_h(x)=\sum_{i=1}^{N-1}V_i\lambda_i(x)
+$$
 
-into the energy functional gives the finite-dimensional quadratic functional
+into the energy functional gives
 
-$$ J(v_h)=\frac{1}{2}V^\top A V-F^\top V. $$
+$$
+J(v_h)=\frac{1}{2}V^{T}AV-F^{T}V.
+$$
 
-The stiffness matrix $A$ is defined by
+The stiffness matrix is defined by
 
-$$ A_{ij}=\int_0^1\lambda_i'(x)\lambda_j'(x)\,dx, $$
+$$
+A_{ij}
+=
+\int_0^1
+\lambda_i'(x)\lambda_j'(x)\,dx.
+$$
 
-and the load vector $F$ by
+The load vector is defined by
 
-$$ F_i=\int_0^1f(x)\lambda_i(x)\,dx. $$
+$$
+F_i
+=
+\int_0^1
+f(x)\lambda_i(x)\,dx.
+$$
 
-For a uniform mesh with mesh size $h$, the stiffness matrix has the tridiagonal form
+For a uniform mesh with mesh size $h$, the stiffness matrix is tridiagonal with
 
-$$ A=\frac{1}{h}\begin{pmatrix}2&-1&0&\cdots&0\\-1&2&-1&\ddots&\vdots\\0&-1&2&\ddots&0\\\vdots&\ddots&\ddots&\ddots&-1\\0&\cdots&0&-1&2\end{pmatrix}. $$
+$$
+A_{ii}=\frac{2}{h}
+$$
 
-The discrete obstacle problem is therefore the convex quadratic optimization problem
+and
 
-$$ \min_{V\geq\Psi}\left(\frac{1}{2}V^\top A V-F^\top V\right). $$
+$$
+A_{i,i+1}=A_{i+1,i}=-\frac{1}{h}.
+$$
 
-The corresponding discrete complementarity conditions are
+All other entries are zero.
 
-$$ V-\Psi\geq0, \qquad AV-F\geq0, \qquad (V_i-\Psi_i)(AV-F)_i=0. $$
+The discrete obstacle problem is therefore
+
+$$
+\min_{V \geq \Psi}
+\left(
+\frac{1}{2}V^{T}AV-F^{T}V
+\right).
+$$
+
+Its discrete complementarity conditions are
+
+$$
+V-\Psi \geq 0,
+$$
+
+$$
+AV-F \geq 0,
+$$
+
+and
+
+$$
+(V_i-\Psi_i)(AV-F)_i=0.
+$$
 
 ## Benchmark problem
 
@@ -110,44 +192,73 @@ The implementation is tested on the example discussed in the Numerical Practicum
 
 The domain is $[0,1]$ and the load is
 
-$$ f(x)=-1. $$
-
-For a parameter $0<\alpha<\frac{1}{2}$, the obstacle is
-
-$$ \psi(x)=x(1-x)-\frac{3}{2}\alpha^2. $$
-
-The exact solution is
-
 $$
-u(x)=
-\begin{cases}
-\frac{x^2}{2}+(1-3\alpha)x, & 0\leq x<\alpha,\\
-\psi(x), & \alpha\leq x\leq 1-\alpha,\\
-\frac{(1-x)^2}{2}+(1-3\alpha)(1-x), & 1-\alpha<x\leq1.
-\end{cases}
+f(x)=-1.
 $$
 
-Hence, the exact contact region is
+For a parameter
 
-$$ [\alpha,1-\alpha]. $$
+$$
+0<\alpha<\frac{1}{2},
+$$
 
-The availability of an exact solution allows the finite element approximation to be validated directly and its convergence under mesh refinement to be studied.
+the obstacle is
+
+$$
+\psi(x)=x(1-x)-\frac{3}{2}\alpha^2.
+$$
+
+The exact solution is defined piecewise.
+
+For $0\leq x<\alpha$,
+
+$$
+u(x)=\frac{x^2}{2}+(1-3\alpha)x.
+$$
+
+For $\alpha\leq x\leq1-\alpha$,
+
+$$
+u(x)=\psi(x).
+$$
+
+For $1-\alpha<x\leq1$,
+
+$$
+u(x)=\frac{(1-x)^2}{2}+(1-3\alpha)(1-x).
+$$
+
+The exact contact region is therefore
+
+$$
+[\alpha,1-\alpha].
+$$
+
+Because an exact solution is available, the finite element approximation can be validated directly.
 
 ## Numerical experiments
 
-The repository contains two main experiments.
+The repository contains two main numerical experiments.
 
-`experiments/run_example.py` solves the benchmark problem for a fixed mesh and compares the P1 finite element solution with the exact solution and obstacle.
+`experiments/run_example.py` solves the benchmark problem for a fixed mesh and compares:
+
+- the exact solution,
+- the P1 finite element solution,
+- the obstacle.
 
 `experiments/convergence.py` repeats the computation for increasingly fine meshes and evaluates the numerical error.
 
-For the benchmark with $\alpha=0.2$, the observed convergence rates are approximately
+For the benchmark with $\alpha=0.2$, the numerical experiments give approximately
 
-$$ \|u-u_h\|_{L^2}=O(h^2) $$
+$$
+\|u-u_h\|_{L^2}=O(h^2)
+$$
 
 and
 
-$$ |u-u_h|_{H^1}=O(h). $$
+$$
+|u-u_h|_{H^1}=O(h).
+$$
 
 ## Project structure
 
@@ -170,25 +281,25 @@ The main files have the following roles:
 
 - `src/problem.py` defines the load, obstacle, and exact benchmark solution.
 - `src/fem.py` constructs the mesh and assembles the P1 finite element system.
-- `src/solver.py` solves the resulting bound-constrained quadratic optimization problem.
+- `src/solver.py` solves the bound-constrained quadratic optimization problem.
 - `experiments/run_example.py` runs and visualizes one benchmark solution.
 - `experiments/convergence.py` performs the mesh-refinement and convergence study.
 
 ## Running the code
 
-Install the required Python packages with
+Install the required packages:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Run the benchmark example with
+Run the benchmark problem:
 
 ```bash
 python experiments/run_example.py
 ```
 
-Run the convergence study with
+Run the convergence study:
 
 ```bash
 python experiments/convergence.py
