@@ -11,7 +11,3 @@ venv/
 
 # VS Code local settings
 .vscode/
-
-# Generated figures
-figures/*.png
-figures/*.pdf
