@@ -1,21 +1,15 @@
-# Finite Element Discretization of a 1D Obstacle Problem
-
-Numerical Practicum project at the University of Zurich.
-
-This repository implements a piecewise-linear finite element discretization of a one-dimensional obstacle problem.
-
 ## Continuous problem
 
-We consider the energy functional
+Let $[a,b]$ be a bounded interval. We consider the energy functional
 
 $$
-J(v) = \frac{1}{2}\int_0^1 |v'(x)|^2\,dx - \int_0^1 f(x)v(x)\,dx.
+J(v) = \frac{1}{2}\int_a^b |v'(x)|^2\,dx - \int_a^b f(x)v(x)\,dx.
 $$
 
 The admissible set is
 
 $$
-K = \{v \in H_0^1(0,1) \mid v \geq \psi\}.
+K = \{v \in H_0^1(a,b) \mid v \geq \psi\}.
 $$
 
 The obstacle problem is to find the minimizer of the energy over this admissible set:
@@ -27,9 +21,9 @@ $$
 The corresponding variational inequality is
 
 $$
-\int_0^1 u'(x)(v-u)'(x)\,dx
+\int_a^b u'(x)(v-u)'(x)\,dx
 \geq
-\int_0^1 f(x)(v-u)(x)\,dx
+\int_a^b f(x)(v-u)(x)\,dx
 \quad \text{for all } v \in K.
 $$
 
@@ -60,14 +54,14 @@ $$
 Let
 
 $$
-0=x_0<x_1<\cdots<x_N=1
+a=x_0<x_1<\cdots<x_N=b
 $$
 
 be a partition of the interval into $N$ finite elements.
 
 We approximate the continuous solution using the space of continuous piecewise-linear functions that vanish at the boundary.
 
-The nodal hat functions are denoted by
+The nodal hat functions associated with the interior nodes are denoted by
 
 $$
 \lambda_1,\ldots,\lambda_{N-1}.
@@ -76,7 +70,7 @@ $$
 A discrete function can be written as
 
 $$
-v_h(x)=\sum_{i=1}^{N-1} V_i\lambda_i(x).
+v_h(x)=\sum_{i=1}^{N-1}V_i\lambda_i(x).
 $$
 
 Because the hat functions satisfy
@@ -96,7 +90,7 @@ $$
 The obstacle is approximated by its piecewise-linear nodal interpolant
 
 $$
-\psi_h = I_h\psi.
+\psi_h=I_h\psi.
 $$
 
 At the interior nodes, define
@@ -108,7 +102,7 @@ $$
 The obstacle constraint becomes
 
 $$
-V_i \geq \Psi_i,
+V_i\geq\Psi_i,
 \qquad
 i=1,\ldots,N-1.
 $$
@@ -130,12 +124,18 @@ J(v_h)=\frac{1}{2}V^{T}AV-F^{T}V.
 $$
 
 The stiffness matrix is defined by
-$A_{ij} = \int_0^1 \lambda_i'(x)\lambda_j'(x)\,dx$.
+$A_{ij}=\int_a^b \lambda_i'(x)\lambda_j'(x)\,dx$.
 
 The load vector is defined by
-$F_i = \int_0^1 f(x)\lambda_i(x)\,dx$.
+$F_i=\int_a^b f(x)\lambda_i(x)\,dx$.
 
-For a uniform mesh with mesh size $h$, the stiffness matrix is tridiagonal with
+For a uniform mesh with mesh size
+
+$$
+h=\frac{b-a}{N},
+$$
+
+the stiffness matrix is tridiagonal with
 
 $$
 A_{ii}=\frac{2}{h}
@@ -152,7 +152,7 @@ All other entries are zero.
 The discrete obstacle problem is therefore
 
 $$
-\min_{V \geq \Psi}
+\min_{V\geq\Psi}
 \left(
 \frac{1}{2}V^{T}AV-F^{T}V
 \right).
@@ -161,18 +161,20 @@ $$
 Its discrete complementarity conditions are
 
 $$
-V-\Psi \geq 0,
+V-\Psi\geq0,
 $$
 
 $$
-AV-F \geq 0,
+AV-F\geq0,
 $$
 
-and
+and, for every interior node $i$,
 
 $$
 (V_i-\Psi_i)(AV-F)_i=0.
 $$
+
+The vector $AV-F$ is the discrete analogue of the continuous reaction term $-u''-f$. At a free node the residual vanishes, while at a contact node it may be positive.
 
 ## Benchmark problem
 
