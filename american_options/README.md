@@ -1,110 +1,90 @@
-## American option pricing extension
+# American Option Pricing Extension
 
-The obstacle formulation also appears naturally in mathematical finance through optimal stopping.
+This extension applies the obstacle-problem framework to optimal stopping in mathematical finance.
 
-For an American put with strike $K$, the immediate exercise payoff is
+## American put as an obstacle problem
 
-$g(S) = \max(K-S,0)$.
+For an American put with strike $K$, the immediate exercise payoff is $g(S)=\max(K-S,0)$.
 
-Because the holder may exercise at any time before maturity, the option value must satisfy
+Because the holder may exercise at any time before maturity, the option value must satisfy $V(t,S)\geq g(S)$.
 
-$V(t,S) \geq g(S)$.
+Where $V(t,S)>g(S)$, immediate exercise is not optimal and the option is in the continuation region. There the Black-Scholes PDE holds:
 
-Where $V(t,S) > g(S)$, early exercise is not optimal and the option satisfies the Black-Scholes PDE
+$$V_t+\frac{1}{2}\sigma^2S^2V_{SS}+rSV_S-rV=0.$$
 
-$$
-V_t
-+
-\frac{1}{2}\sigma^2 S^2 V_{SS}
-+
-rS V_S
--
-rV
-=
-0.
-$$
+Where $V(t,S)=g(S)$, the option is in the exercise region.
 
-Where $V(t,S)=g(S)$, the option is in the exercise region. The boundary separating the continuation and exercise regions is the free boundary of the obstacle problem and represents the optimal early-exercise boundary.
+The boundary separating the continuation and exercise regions is the free boundary of the obstacle problem. Financially, it represents the optimal early-exercise boundary.
 
-### Log-price transformation
+## Log-price transformation
 
-To connect the pricing problem with the finite element obstacle solver, introduce time to maturity $\tau=T-t$ and log-moneyness
-
-$x=\log(S/K)$.
+To connect the pricing problem with the finite element obstacle solver, introduce time to maturity $\tau=T-t$ and log-moneyness $x=\log(S/K)$.
 
 Writing $v(\tau,x)=V(T-\tau,Ke^x)$ gives
 
-$$
-v_\tau
-=
-\frac{1}{2}\sigma^2v_{xx}
-+
-\left(r-\frac{1}{2}\sigma^2\right)v_x
--
-rv.
-$$
+$$v_\tau=\frac{1}{2}\sigma^2v_{xx}+\left(r-\frac{1}{2}\sigma^2\right)v_x-rv.$$
 
-An exponential transformation $v=e^{\alpha x+\beta\tau}u$ is used to remove the first-derivative and reaction terms. With suitable choices of $\alpha$ and $\beta$, the continuation equation becomes
+The exponential transformation $v=e^{\alpha x+\beta\tau}u$ is used to remove the first-derivative and reaction terms.
 
-$$
-u_\tau
-=
-\frac{1}{2}\sigma^2u_{xx}.
-$$
+With suitable choices of $\alpha$ and $\beta$, the continuation equation becomes
 
-### Finite element and time discretization
+$$u_\tau=\frac{1}{2}\sigma^2u_{xx}.$$
+
+This transformed equation has the form of a heat equation and leads to a symmetric finite element discretization.
+
+## Finite element and time discretization
 
 The transformed equation is discretized in space using the same piecewise-linear P1 finite elements as the stationary obstacle problem.
 
-The stiffness matrix is defined by
-$A_{ij}=\int \lambda_i'(x)\lambda_j'(x)\,dx$.
+The stiffness matrix is defined by $A_{ij}=\int \lambda_i'(x)\lambda_j'(x)\,dx$.
 
-Because the problem is time dependent, a mass matrix is also required:
-
-$M_{ij}=\int \lambda_i(x)\lambda_j(x)\,dx$.
+Because the problem is time dependent, a mass matrix is also required. It is defined by $M_{ij}=\int \lambda_i(x)\lambda_j(x)\,dx$.
 
 Using implicit Euler with time step $\Delta\tau$ gives the system matrix
 
-$$
-B
-=
-\frac{M}{\Delta\tau}
-+
-\frac{1}{2}\sigma^2 A.
-$$
+$$B=\frac{M}{\Delta\tau}+\frac{1}{2}\sigma^2A.$$
 
-At each time step, the American exercise constraint produces a convex quadratic obstacle problem of the form
+At each time step, the American exercise constraint produces a convex quadratic obstacle problem:
 
-$$
-\min_{U\geq\Psi}
-\left(
-\frac{1}{2}U^TBU-b^TU
-\right).
-$$
+$$\min_{U\geq\Psi}\left(\frac{1}{2}U^TBU-b^TU\right).$$
 
-The current implementation solves this bound-constrained problem with SciPy's L-BFGS-B optimizer.
+Here, $\Psi$ represents the transformed American put payoff at the finite element degrees of freedom.
 
-The same complementarity structure as in the stationary obstacle problem therefore appears at every time step.
+The current implementation solves this bound-constrained problem using SciPy's L-BFGS-B optimizer.
 
-### Numerical example
+The same complementarity structure as in the stationary obstacle problem therefore appears at every time step: degrees of freedom in the exercise region lie on the obstacle, while those in the continuation region satisfy the discrete pricing equation.
 
-The example uses the parameters
+## Numerical example
+
+The current numerical example uses:
 
 - spot price $S_0=100$,
 - strike $K=100$,
 - risk-free rate $r=0.05$,
 - volatility $\sigma=0.20$,
-- maturity $T=1$ year.
+- maturity $T=1$ year,
+- 200 P1 finite elements,
+- 200 implicit-Euler time steps.
 
-With 200 P1 elements and 200 implicit-Euler time steps, the numerical American put value is approximately $6.09$.
+The numerical American put value is approximately 6.09.
 
-For comparison, the corresponding European Black-Scholes put value is approximately $5.57$.
+For comparison, the corresponding European Black-Scholes put value is approximately 5.57.
 
 The American value is higher because the holder has the additional right to exercise before maturity.
 
 The implementation also estimates the free boundary separating the continuation and early-exercise regions.
 
-### Outlook
+## Numerical results
+
+The first figure compares the American put value with the immediate exercise payoff.
+
+![American put value](../figures/american_put_value.png)
+
+The second figure shows the numerically estimated optimal early-exercise boundary.
+
+![American exercise boundary](../figures/american_put_boundary.png)
+
+## Outlook
 
 The current financial extension intentionally uses the same generic L-BFGS-B optimizer as the first obstacle-problem implementation.
 
