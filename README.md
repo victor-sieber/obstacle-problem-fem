@@ -1,3 +1,48 @@
+# Finite Element Methods for Obstacle Problems and American Optimal Stopping
+
+Numerical Practicum project at the University of Zurich, supervised by Dr. Benedikt Grässle.
+
+This repository develops finite element methods for one-dimensional obstacle problems and explores their connection to optimal stopping in mathematical finance.
+
+The core project starts from a variational inequality with a pointwise obstacle constraint, discretizes it using piecewise-linear P1 finite elements, and studies the resulting finite-dimensional complementarity problem.
+
+As a self-directed extension, the same obstacle-problem framework is applied to American put option pricing under the Black-Scholes model. The option payoff acts as the obstacle, while the free boundary corresponds to the optimal early-exercise boundary.
+
+## Project overview
+
+The repository currently includes:
+
+- P1 finite element assembly for one-dimensional obstacle problems,
+- bound-constrained quadratic optimization and complementarity checks,
+- validation against an exact obstacle-problem benchmark,
+- L2 and H1-seminorm convergence experiments,
+- American put pricing using P1 finite elements and implicit time stepping,
+- numerical recovery of the American early-exercise boundary.
+
+Current numerical extensions include a primal-dual active-set solver and higher-order P2 finite elements.
+
+## American option pricing
+
+The American-option extension applies the same obstacle-problem framework to optimal stopping.
+
+For an American put with payoff $g(S)=\max(K-S,0)$, the option value satisfies the obstacle condition $V(t,S)\geq g(S)$.
+
+In the continuation region, where $V(t,S)>g(S)$, the Black-Scholes pricing PDE holds. In the exercise region, $V(t,S)=g(S)$. The interface between these regions is the free boundary and represents the optimal early-exercise boundary.
+
+The implementation transforms the Black-Scholes problem to log-price coordinates, applies P1 finite elements in space and implicit Euler in time, and solves the resulting bound-constrained quadratic problem at each time step.
+
+For the benchmark parameters $S_0=100$, $K=100$, $r=0.05$, $\sigma=0.20$, and $T=1$, the current implementation produces an American put value of approximately $6.09$, compared with a European Black-Scholes value of approximately $5.57$.
+
+See [`american_options/README.md`](american_options/README.md) for the mathematical formulation and implementation details.
+
+### Numerical results
+
+| American put value and payoff | Early-exercise boundary |
+| --- | --- |
+| ![American put value](figures/american_put_value.png) | ![American exercise boundary](figures/american_put_boundary.png) |
+
+The American option value stays above the immediate-exercise payoff. The recovered free boundary separates the exercise and continuation regions.
+
 ## Continuous problem
 
 Let $[a,b]$ be a bounded interval. We consider the energy functional
