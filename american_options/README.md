@@ -84,6 +84,29 @@ The second figure shows the numerically estimated optimal early-exercise boundar
 
 ![American exercise boundary](../figures/american_put_boundary.png)
 
+## Numerical validation
+
+The American put implementation is validated against an independent Cox-Ross-Rubinstein binomial-tree benchmark.
+
+The FEM calculation and the binomial tree solve the same optimal-stopping problem using different numerical formulations. The FEM implementation uses the Black-Scholes obstacle problem, while the CRR method uses backward induction and compares continuation with immediate exercise at every node.
+
+A CRR tree with 5000 time steps gives a reference value of approximately 6.09022 for the benchmark parameters.
+
+The FEM calculation is repeated under joint spatial and temporal refinement. The computed price approaches the CRR benchmark closely, with the 200-element calculation producing approximately 6.09059 and the 400-element calculation approximately 6.08896.
+
+Because the spatial mesh and time step are refined simultaneously, this experiment is intended as a numerical validation and stabilization study rather than as an estimate of a formal convergence order. The different discretization errors need not decrease monotonically when refined together.
+
+![American put convergence](../figures/american_put_convergence.png)
+
+The difference from the CRR reference becomes small at the finer resolutions, although it is not monotone under joint refinement.
+
+![American put validation error](../figures/american_put_validation_error.png)
+
+The validation experiment can be reproduced with:
+
+```bash
+python american_options/experiments/convergence_validation.py
+
 ## Outlook
 
 The current financial extension intentionally uses the same generic L-BFGS-B optimizer as the first obstacle-problem implementation.
