@@ -10,4 +10,4 @@ venv/
 .DS_Store
 
 # VS Code local settings
-.vscode/.venv/
+.vscode/
