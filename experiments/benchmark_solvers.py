@@ -4,6 +4,7 @@ import sys
 import time
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedFormatter, FixedLocator, NullLocator
 import numpy as np
 
 
@@ -408,20 +409,25 @@ def main():
         figsize=(15, 4.5),
     )
 
+    # -------------------------------------------------
     # Plot 1: runtime
-    axes[0].semilogy(
+    # -------------------------------------------------
+
+    axes[0].plot(
         element_counts,
         lbfgsb_times,
         "o-",
         label="L-BFGS-B",
     )
 
-    axes[0].semilogy(
+    axes[0].plot(
         element_counts,
         pdas_times,
         "s-",
         label="PDAS",
     )
+
+    axes[0].set_yscale("log")
 
     axes[0].set_xlabel(
         "Number of elements"
@@ -435,10 +441,6 @@ def main():
         "Solver runtime"
     )
 
-    axes[0].set_xticks(
-        element_counts
-    )
-
     axes[0].grid(
         True,
         which="both",
@@ -446,7 +448,10 @@ def main():
 
     axes[0].legend()
 
+    # -------------------------------------------------
     # Plot 2: iteration count
+    # -------------------------------------------------
+
     axes[1].plot(
         element_counts,
         lbfgsb_iterations,
@@ -473,19 +478,20 @@ def main():
         "Iteration count"
     )
 
-    axes[1].set_xticks(
-        element_counts
-    )
-
     axes[1].grid(True)
     axes[1].legend()
 
+    # -------------------------------------------------
     # Plot 3: agreement
-    axes[2].semilogy(
+    # -------------------------------------------------
+
+    axes[2].plot(
         element_counts,
         max_differences,
         "o-",
     )
+
+    axes[2].set_yscale("log")
 
     axes[2].set_xlabel(
         "Number of elements"
@@ -500,14 +506,53 @@ def main():
         "Agreement of discrete solutions"
     )
 
-    axes[2].set_xticks(
-        element_counts
-    )
-
     axes[2].grid(
         True,
         which="both",
     )
+
+    # -------------------------------------------------
+    # Force clean x-axis formatting on ALL three plots.
+    #
+    # Keep logarithmic spacing because each mesh size
+    # doubles, but show only literal integer labels:
+    #
+    # 20, 40, 80, 160, 320
+    # -------------------------------------------------
+
+    tick_values = element_counts.tolist()
+
+    tick_labels = [
+        str(int(n))
+        for n in element_counts
+    ]
+
+    for ax in axes:
+        ax.set_xscale(
+            "log",
+            base=2,
+        )
+
+        ax.xaxis.set_major_locator(
+            FixedLocator(
+                tick_values
+            )
+        )
+
+        ax.xaxis.set_major_formatter(
+            FixedFormatter(
+                tick_labels
+            )
+        )
+
+        ax.xaxis.set_minor_locator(
+            NullLocator()
+        )
+
+        ax.set_xlim(
+            18,
+            350,
+        )
 
     fig.suptitle(
         r"P1 obstacle solver benchmark, "
@@ -526,6 +571,7 @@ def main():
     fig.savefig(
         benchmark_figure_path,
         dpi=200,
+        bbox_inches="tight",
     )
 
     plt.close(fig)
@@ -631,6 +677,7 @@ def main():
     fig.savefig(
         comparison_figure_path,
         dpi=200,
+        bbox_inches="tight",
     )
 
     plt.close(fig)
