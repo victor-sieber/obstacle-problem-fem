@@ -218,7 +218,7 @@ def main():
     plt.tight_layout()
 
     figure_path = (
-        ROOT / "figures" / "convergence.png"
+        ROOT / "figures" / "p1_alpha_0p2_convergence.png"
     )
 
     plt.savefig(

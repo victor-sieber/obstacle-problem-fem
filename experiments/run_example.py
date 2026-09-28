@@ -99,7 +99,7 @@ def main():
     plt.grid(True)
     plt.tight_layout()
 
-    figure_path = ROOT / "figures" / "solution.png"
+    figure_path = ROOT / "figures" / "p1_alpha_0p2_solution.png"
     plt.savefig(
         figure_path,
         dpi=200,
