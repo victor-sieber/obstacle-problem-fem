@@ -1,118 +1,33 @@
 # Finite Element Methods for Obstacle Problems and American Optimal Stopping
 
-Numerical Practicum project at the University of Zurich, supervised by Dr. Benedikt Grässle.
+Numerical Practicum project at the University of Zurich.
 
-This repository develops finite element methods for one-dimensional obstacle problems and explores their connection to optimal stopping in mathematical finance.
+The core project develops finite element methods for one-dimensional obstacle problems, starting from the variational inequality and the resulting finite-dimensional complementarity problem.
 
-The core project starts from a variational inequality with a pointwise obstacle constraint, discretizes it using finite elements, and studies the resulting finite-dimensional complementarity problem.
-
-As a self-directed extension, the same obstacle-problem framework is applied to American put option pricing under the Black-Scholes model. The option payoff acts as the obstacle, while the free boundary corresponds to the optimal early-exercise boundary.
-
-A further extension adds a local tool-using LLM interface on top of the pricing engine. The language model does not generate option prices itself. Instead, it selects deterministic analytics tools built around the numerical solver and explains the returned results.
+> **Scope.** The American option pricing and local LLM components are self-directed extensions outside of the Numerical Practicum.
 
 ## Project overview
 
-The repository currently includes:
+### Numerical Practicum core
 
-- P1 finite element assembly for one-dimensional obstacle problems,
-- bound-constrained quadratic optimization and complementarity checks,
-- validation against an exact obstacle-problem benchmark,
-- L2 and H1-seminorm convergence experiments,
-- American put pricing using P1 finite elements and implicit time stepping,
-- numerical recovery of the American early-exercise boundary,
-- validation of the American put solver against a high-resolution Cox-Ross-Rubinstein benchmark,
-- deterministic option analytics for pricing, scenario comparison, parameter sweeps, and exercise-boundary analysis,
-- a local tool-using LLM interface using Ollama and Qwen3.
+The current project includes:
 
-Planned numerical extensions include a primal-dual active-set solver and higher-order P2 finite elements.
+- P1 and P2 finite element discretizations for one-dimensional obstacle problems,
+- primal-dual active-set (PDAS) solution of the discrete complementarity problem,
+- comparison of PDAS with L-BFGS-B,
+- validation against exact obstacle-problem solutions,
+- $L^2$ and $H^1$-seminorm convergence experiments,
+- aligned and non-aligned smooth benchmark cases,
+- singular-load experiments with Dirac delta forcing,
+- P1-P2 comparisons under smooth and reduced-regularity settings.
 
-## American option pricing
+### Current / upcoming work
 
-The American-option extension applies the same obstacle-problem framework to optimal stopping.
+- test a local P1 jump indicator for adaptive mesh refinement,
+- investigate coarse-to-fine / nested initialization of PDAS,
+- compare adaptive and uniform refinement if the indicator is useful,
+- consolidate the numerical experiments and prepare the final presentation.
 
-For an American put with payoff $g(S)=\max(K-S,0)$, the option value satisfies the obstacle condition $V(t,S)\geq g(S)$.
-
-In the continuation region, where $V(t,S)>g(S)$, the Black-Scholes pricing PDE holds. In the exercise region, $V(t,S)=g(S)$. The interface between these regions is the free boundary and represents the optimal early-exercise boundary.
-
-The implementation transforms the Black-Scholes problem to log-price coordinates, applies P1 finite elements in space and implicit Euler in time, and solves a bound-constrained convex quadratic optimization problem at each time step.
-
-For the benchmark parameters $S_0=100$, $K=100$, $r=0.05$, $\sigma=0.20$, and $T=1$, the current implementation produces an American put value of approximately $6.09$, compared with a European Black-Scholes value of approximately $5.57$.
-
-The American solver was independently checked against a 5000-step Cox-Ross-Rubinstein tree. Under joint mesh and time refinement, the FEM price approaches the numerical reference closely, although the difference is not monotone under joint refinement.
-
-See [`american_options/README.md`](american_options/README.md) for the financial formulation, validation, and implementation details.
-
-## Numerical results
-
-| American put value and payoff | Early-exercise boundary |
-| --- | --- |
-| ![American put value](figures/american_put_value.png) | ![American exercise boundary](figures/american_put_boundary.png) |
-
-The American option value stays above the immediate-exercise payoff. The recovered free boundary separates the exercise and continuation regions.
-
-## Visual intuition: obstacle structure and time to maturity
-
-The animation below shows numerical American put solutions for increasing times to maturity.
-
-Close to expiration, the option value approaches the immediate-exercise payoff. With more time remaining, continuation value develops and the option value separates from the payoff over a larger region.
-
-The marked contact point is the estimated early-exercise boundary. It separates the exercise region, where the option value coincides with the payoff, from the continuation region, where retaining the option is more valuable than exercising immediately.
-
-![American option obstacle evolution](figures/american_put_evolution.gif)
-
-## Local LLM analytics layer
-
-The American-option extension also contains a local tool-using LLM interface.
-
-The design principle is simple:
-
-> The numerical solver is the quantitative source of truth. The language model is the interaction layer.
-
-The architecture is:
-
-```text
-User question
-    |
-    v
-Local LLM
-Ollama + qwen3:8b
-    |
-    v
-Tool selection
-american_options/ai_assistant.py
-    |
-    v
-Deterministic analytics
-american_options/analytics.py
-    |
-    +-- price_option
-    +-- compare_scenarios
-    +-- sweep_parameter
-    +-- analyze_exercise_boundary
-    +-- get_model_information
-    |
-    v
-Validated numerical engine
-american_options/american_option.py
-    |
-    v
-Structured numerical result
-    |
-    v
-Natural-language explanation
-```
-
-Example questions include:
-
-- "What numerical model do you use and how has it been validated?"
-- "Price an American put with spot 100, strike 100, volatility 20%, rate 5%, and one year to maturity."
-- "What happens if volatility rises from 20% to 30% while everything else stays the same?"
-
-The LLM is instructed to call deterministic tools for quantitative option results rather than inventing prices.
-
-Input validation is handled by the deterministic analytics layer. For example, invalid inputs such as negative volatility are rejected before reaching the numerical solver.
-
-The current interface runs locally and does not require a paid external LLM API.
 
 ## Continuous obstacle problem
 
@@ -254,50 +169,115 @@ and
 
 $$|u-u_h|_{H^1}=O(h).$$
 
+### Self-directed extensions (outside the Numerical Practicum)
+
+- American put option pricing using the obstacle-problem framework,
+- numerical recovery of the early-exercise boundary and validation against a Cox-Ross-Rubinstein benchmark,
+- a local tool-using LLM interface built on top of deterministic option analytics.
+
+## Self-directed extension: American option pricing
+
+The American-option extension applies the same obstacle-problem framework to optimal stopping.
+
+For an American put with payoff $g(S)=\max(K-S,0)$, the option value satisfies the obstacle condition $V(t,S)\geq g(S)$.
+
+In the continuation region, where $V(t,S)>g(S)$, the Black-Scholes pricing PDE holds. In the exercise region, $V(t,S)=g(S)$. The interface between these regions is the free boundary and represents the optimal early-exercise boundary.
+
+The implementation transforms the Black-Scholes problem to log-price coordinates, applies P1 finite elements in space and implicit Euler in time, and solves a bound-constrained convex quadratic optimization problem at each time step.
+
+For the benchmark parameters $S_0=100$, $K=100$, $r=0.05$, $\sigma=0.20$, and $T=1$, the current implementation produces an American put value of approximately $6.09$, compared with a European Black-Scholes value of approximately $5.57$.
+
+The American solver was independently checked against a 5000-step Cox-Ross-Rubinstein tree. Under joint mesh and time refinement, the FEM price approaches the numerical reference closely, although the difference is not monotone under joint refinement.
+
+See [`american_options/README.md`](american_options/README.md) for the financial formulation, validation, and implementation details.
+
+## Numerical results
+
+| American put value and payoff | Early-exercise boundary |
+| --- | --- |
+| ![American put value](figures/american_put_value.png) | ![American exercise boundary](figures/american_put_boundary.png) |
+
+The American option value stays above the immediate-exercise payoff. The recovered free boundary separates the exercise and continuation regions.
+
+## Visual intuition: obstacle structure and time to maturity
+
+The animation below shows numerical American put solutions for increasing times to maturity.
+
+Close to expiration, the option value approaches the immediate-exercise payoff. With more time remaining, continuation value develops and the option value separates from the payoff over a larger region.
+
+The marked contact point is the estimated early-exercise boundary. It separates the exercise region, where the option value coincides with the payoff, from the continuation region, where retaining the option is more valuable than exercising immediately.
+
+![American option obstacle evolution](figures/american_put_evolution.gif)
+
+## Self-directed extension: Local LLM analytics layer
+
+The American-option extension also contains a local tool-using LLM interface.
+
+The design principle is simple:
+
+> The numerical solver is the quantitative source of truth. The language model is the interaction layer.
+
+The architecture is:
+
+```text
+User question
+    |
+    v
+Local LLM
+Ollama + qwen3:8b
+    |
+    v
+Tool selection
+american_options/ai_assistant.py
+    |
+    v
+Deterministic analytics
+american_options/analytics.py
+    |
+    +-- price_option
+    +-- compare_scenarios
+    +-- sweep_parameter
+    +-- analyze_exercise_boundary
+    +-- get_model_information
+    |
+    v
+Validated numerical engine
+american_options/american_option.py
+    |
+    v
+Structured numerical result
+    |
+    v
+Natural-language explanation
+```
+
+Example questions include:
+
+- "What numerical model do you use and how has it been validated?"
+- "Price an American put with spot 100, strike 100, volatility 20%, rate 5%, and one year to maturity."
+- "What happens if volatility rises from 20% to 30% while everything else stays the same?"
+
+The LLM is instructed to call deterministic tools for quantitative option results rather than inventing prices.
+
+Input validation is handled by the deterministic analytics layer. For example, invalid inputs such as negative volatility are rejected before reaching the numerical solver.
+
+The current interface runs locally and does not require a paid external LLM API.
+
 ## Project structure
 
 ```text
 obstacle-problem-fem/
+├── src/                  # FEM assembly, problem definitions, solvers
+├── experiments/          # core convergence, solver, P1/P2, and Dirac experiments
+├── figures/              # generated figures
+├── results/              # numerical output tables
+├── american_options/     # self-directed finance and LLM extensions
 ├── README.md
 ├── requirements.txt
-├── src/
-│   ├── __init__.py
-│   ├── fem.py
-│   ├── problem.py
-│   └── solver.py
-├── experiments/
-│   ├── run_example.py
-│   └── convergence.py
-├── american_options/
-│   ├── README.md
-│   ├── american_option.py
-│   ├── analytics.py
-│   ├── ai_assistant.py
-│   ├── validation.py
-│   ├── experiments/
-│   │   ├── run_american_put.py
-│   │   ├── convergence_validation.py
-│   │   ├── run_ai_assistant.py
-│   │   └── make_exercise_animation.py
-│   └── results/
-└── figures/
+└── .gitignore
 ```
 
-The main files have the following roles:
-
-- `src/problem.py` defines the load, obstacle, and exact benchmark solution.
-- `src/fem.py` constructs the mesh and assembles the P1 finite element system.
-- `src/solver.py` solves the bound-constrained quadratic optimization problem.
-- `experiments/run_example.py` runs and visualizes the obstacle-problem benchmark.
-- `experiments/convergence.py` performs the obstacle-problem convergence study.
-- `american_options/american_option.py` contains the American put finite element pricing engine.
-- `american_options/validation.py` contains the independent CRR benchmark.
-- `american_options/analytics.py` provides deterministic analytics functions built on the pricing engine.
-- `american_options/ai_assistant.py` implements the local tool-using LLM interface.
-- `american_options/experiments/run_american_put.py` generates the main American put figures.
-- `american_options/experiments/convergence_validation.py` compares FEM prices with the CRR benchmark under refinement.
-- `american_options/experiments/run_ai_assistant.py` launches the local interactive assistant.
-- `american_options/experiments/make_exercise_animation.py` generates the explanatory American-option animation.
+The Numerical Practicum core is contained in `src/`, `experiments/`, `figures/`, and `results/`. The `american_options/` directory is a separate self-directed extension.
 
 ## Running the code
 
