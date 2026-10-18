@@ -180,3 +180,194 @@ def solve_obstacle_problem_pdas(
         f"PDAS failed to converge within "
         f"{maxiter} iterations."
     )
+
+def solve_obstacle_problem_pdas_nested(
+    nodes,
+    A,
+    F,
+    obstacle_function,
+    initial_solution,
+    c=1.0,
+    maxiter=100,
+):
+    """
+    Solve the discrete obstacle problem with PDAS using a
+    supplied fine-grid initial solution.
+
+    The initial solution is typically obtained by prolongating
+    a previously computed coarse-grid FEM solution:
+
+        V_h^0 = I_h V_H.
+
+    From V_h^0, compute
+
+        Lambda_h^0 = A V_h^0 - F,
+
+    and initialize the active/contact set by the same PDAS
+    criterion used during the iteration:
+
+        C_h^0
+        =
+        {i : Lambda_i^0 - c (V_i^0 - Z_i) > 0}.
+    """
+    if c <= 0.0:
+        raise ValueError(
+            "PDAS parameter c must be positive."
+        )
+
+    interior_nodes = nodes[1:-1]
+    psi = obstacle_function(interior_nodes)
+    n = len(psi)
+
+    initial_solution = np.asarray(
+        initial_solution,
+        dtype=float,
+    )
+
+    if initial_solution.shape != (n,):
+        raise ValueError(
+            "initial_solution must contain one value "
+            "for each interior node."
+        )
+
+    # Nested initialization:
+    #
+    # Lambda_h^0 = A_h V_h^0 - F_h
+    #
+    # C_h^0 =
+    # {i : Lambda_i^0 - c(V_i^0 - Z_i) > 0}.
+    initial_multiplier = (
+        A @ initial_solution
+        - F
+    )
+
+    active = (
+        initial_multiplier
+        - c * (
+            initial_solution
+            - psi
+        )
+        > 0.0
+    )
+
+    active_set_history = [
+        np.flatnonzero(active).copy()
+    ]
+
+    for iteration in range(maxiter):
+        free = ~active
+
+        V = np.empty(
+            n,
+            dtype=float,
+        )
+
+        # Contact condition:
+        #
+        # V_C = Z_C.
+        V[active] = psi[active]
+
+        # Free condition:
+        #
+        # Lambda_F = 0
+        #
+        # hence
+        #
+        # A_FF V_F
+        # =
+        # F_F - A_FC Z_C.
+        if np.any(free):
+            A_ff = A[
+                np.ix_(
+                    free,
+                    free,
+                )
+            ]
+
+            rhs = F[free]
+
+            if np.any(active):
+                rhs = (
+                    rhs
+                    - A[
+                        np.ix_(
+                            free,
+                            active,
+                        )
+                    ]
+                    @ psi[active]
+                )
+
+            V[free] = np.linalg.solve(
+                A_ff,
+                rhs,
+            )
+
+        # Full discrete multiplier:
+        #
+        # Lambda = A V - F.
+        multiplier = A @ V - F
+
+        # Standard PDAS active-set update.
+        new_active = (
+            multiplier
+            - c * (V - psi)
+            > 0.0
+        )
+
+        active_set_history.append(
+            np.flatnonzero(
+                new_active
+            ).copy()
+        )
+
+        # Stable active set => converged.
+        if np.array_equal(
+            new_active,
+            active,
+        ):
+            gap = V - psi
+
+            complementarity = (
+                gap * multiplier
+            )
+
+            result = OptimizeResult(
+                x=V,
+                success=True,
+                status=0,
+                message=(
+                    "Nested PDAS active set "
+                    "converged."
+                ),
+                nit=iteration + 1,
+                contact_set=np.flatnonzero(
+                    active
+                ),
+                multiplier=multiplier,
+                min_gap=float(
+                    np.min(gap)
+                ),
+                min_multiplier=float(
+                    np.min(multiplier)
+                ),
+                max_complementarity=float(
+                    np.max(
+                        np.abs(
+                            complementarity
+                        )
+                    )
+                ),
+                active_set_history=(
+                    active_set_history
+                ),
+            )
+
+            return V, psi, result
+
+        active = new_active
+
+    raise RuntimeError(
+        f"Nested PDAS failed to converge "
+        f"within {maxiter} iterations."
+    )
