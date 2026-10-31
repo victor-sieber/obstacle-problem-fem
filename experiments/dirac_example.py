@@ -240,7 +240,7 @@ def compute_errors(
     u = exact_solution_dirac(x)
 
     l2_error = np.sqrt(
-        np.trapezoid(
+        np.trapz(
             (uh - u) ** 2,
             x,
         )
@@ -289,7 +289,7 @@ def compute_errors(
             )
         )
 
-        h1_squared += np.trapezoid(
+        h1_squared += np.trapz(
             (
                 uh_derivative
                 - exact_derivative

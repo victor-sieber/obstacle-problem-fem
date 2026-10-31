@@ -308,3 +308,70 @@ def evaluate_fem_derivative(nodes, interior_values, x):
         + midpoint_values * basis_derivatives[1]
         + right_values * basis_derivatives[2]
     )
+
+def assemble_mass_matrix(nodes, quadrature_order=3):
+    """
+    Assemble the P2 mass matrix
+
+        M_ij = integral phi_i(x) phi_j(x) dx
+
+    on the interior P2 finite-element space.
+
+    It represents the L2 inner product and is used for
+
+        M mu = A U - F,
+
+    the L2-Riesz reconstruction of the discrete multiplier.
+    """
+    n_elements = len(nodes) - 1
+    n_interior = 2 * n_elements - 1
+
+    M = np.zeros(
+        (n_interior, n_interior)
+    )
+
+    xi, weights = _reference_gauss_rule(
+        quadrature_order
+    )
+
+    basis_values = p2_basis(xi)
+
+    for element in range(n_elements):
+        x_left = nodes[element]
+        x_right = nodes[element + 1]
+        h = x_right - x_left
+
+        # dx = h dxi
+        M_local = h * (
+            (basis_values * weights)
+            @ basis_values.T
+        )
+
+        # Local P2 DOFs:
+        #
+        # left vertex, midpoint, right vertex.
+        global_dofs = [
+            2 * element,
+            2 * element + 1,
+            2 * element + 2,
+        ]
+
+        for i_local, i_global in enumerate(
+            global_dofs
+        ):
+            if 1 <= i_global <= 2 * n_elements - 1:
+
+                for j_local, j_global in enumerate(
+                    global_dofs
+                ):
+                    if 1 <= j_global <= 2 * n_elements - 1:
+
+                        M[
+                            i_global - 1,
+                            j_global - 1,
+                        ] += M_local[
+                            i_local,
+                            j_local,
+                        ]
+
+    return M
