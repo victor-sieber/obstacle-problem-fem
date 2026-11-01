@@ -1,22 +1,36 @@
 
-"""Compare cold, original nested, and L2-Riesz nested PDAS.
+"""P1/P2 nested PDAS comparison using median CPU time.
 
-The previously computed cold/original nested results are
-read from CSV. Only the new L2-initialized solves are rerun.
+Dirac obstacle problem:
+    f = -6 - 2*delta_(1/3) - delta_(2/3)
+    psi = -1
 
-No raw multiplier-vector transfer is performed here.
+Uniform meshes:
+    M = 10, 100, 1000, 10000
+
+Compare:
+    1. Cold PDAS
+    2. Original nested PDAS
+    3. L2-Riesz multiplier nested PDAS
+
+Timing:
+    Median CPU time over repeated solves.
+    Includes initialization and PDAS.
+    Excludes FEM assembly and previous coarse-grid solves.
 """
 
+import argparse
 import csv
 from pathlib import Path
-from time import perf_counter
+from time import process_time
 
 import matplotlib.pyplot as plt
 import numpy as np
+
 from matplotlib.ticker import (
     FixedLocator,
+    FuncFormatter,
     NullFormatter,
-    ScalarFormatter,
 )
 
 from src.multiplier_l2_transfer import (
@@ -44,107 +58,176 @@ ROOT = Path(__file__).resolve().parents[1]
 
 LEVELS = (10, 100, 1000, 10000)
 
+METHODS = ("cold", "original", "l2")
+
 LABELS = {
-    "cold": "cold start",
-    "recompute": "original nested",
-    "l2-riesz": r"nested: $L^2$ multiplier",
+    "cold": "cold PDAS",
+    "original": "original nested PDAS",
+    "l2": r"nested $L^2$ multiplier",
 }
 
+FIELDNAMES = [
+    "degree",
+    "elements",
+    "dofs",
+    "method",
+    "repetitions",
+    "pdas_iterations",
+    "median_initialization_cpu_seconds",
+    "median_solver_cpu_seconds",
+    "median_total_cpu_seconds",
+    "max_difference_to_cold",
+    "min_gap",
+    "min_multiplier",
+    "max_complementarity",
+]
+
 
 # ============================================================
-# L2-based nested PDAS
+# 1. Prepare P1 or P2 FEM problem
 # ============================================================
 
-def run_l2_nested(degree, maxiter=1000):
-    """Solve uniform nested FEM problems with L2 multiplier transfer."""
+def prepare_problem(degree, nodes, maxiter):
+    """
+    Assemble the FEM problem once on the current mesh.
 
-    previous = None
-    rows = []
+    Return:
+        solve           - existing PDAS algorithm
+        multiplier      - Lambda = A U - F
+        prolongate      - primal FEM interpolation
+        l2_transfer     - L2-Riesz multiplier transfer
+    """
 
-    for M in LEVELS:
+    if degree == 1:
 
-        nodes = np.linspace(0.0, 1.0, M + 1)
+        lower, diagonal, upper, F = assemble_p1_dirac(
+            nodes
+        )
 
-        # --------------------------------------------------
-        # 1. Assemble FEM matrices and load.
-        # --------------------------------------------------
-
-        if degree == 1:
-
-            lower, diagonal, upper, F = (
-                assemble_p1_dirac(nodes)
+        def solve(U0, Lambda0):
+            return solve_pdas_p1(
+                nodes,
+                lower,
+                diagonal,
+                upper,
+                F,
+                initial_solution=U0,
+                initial_multiplier=Lambda0,
+                maxiter=maxiter,
             )
 
-            def solve(u0, lambda0):
-                return solve_pdas_p1(
-                    nodes,
+        def multiplier(U):
+            return (
+                matvec(
                     lower,
                     diagonal,
                     upper,
-                    F,
-                    initial_solution=u0,
-                    initial_multiplier=lambda0,
-                    maxiter=maxiter,
+                    U,
                 )
-
-            def multiplier(U):
-                return (
-                    matvec(
-                        lower, diagonal, upper, U
-                    )
-                    - F
-                )
-
-            prolongate = prolongate_p1
-            transfer_multiplier = transfer_l2_multiplier_p1
-
-        else:
-
-            Fv, Fm = assemble_p2_dirac(nodes)
-            F = join_p2(Fv, Fm)
-
-            def solve(u0, lambda0):
-                return solve_pdas_p2(
-                    nodes,
-                    Fv,
-                    Fm,
-                    initial_solution=u0,
-                    initial_multiplier=lambda0,
-                    maxiter=maxiter,
-                )
-
-            def multiplier(U):
-                return (
-                    p2_matvec(nodes, U) - F
-                )
-
-            prolongate = prolongate_p2
-            transfer_multiplier = transfer_l2_multiplier_p2
-
-        # --------------------------------------------------
-        # 2. Initial mesh: ordinary cold PDAS.
-        # --------------------------------------------------
-
-        if previous is None:
-
-            U, info = solve(None, None)
-
-            print(
-                f"P{degree}, M={M:>5,}: "
-                f"initial cold solve "
-                f"({info['iterations']} iterations)",
-                flush=True,
+                - F
             )
 
+        return (
+            solve,
+            multiplier,
+            prolongate_p1,
+            transfer_l2_multiplier_p1,
+        )
+
+    elif degree == 2:
+
+        Fv, Fm = assemble_p2_dirac(nodes)
+        F = join_p2(Fv, Fm)
+
+        def solve(U0, Lambda0):
+            return solve_pdas_p2(
+                nodes,
+                Fv,
+                Fm,
+                initial_solution=U0,
+                initial_multiplier=Lambda0,
+                maxiter=maxiter,
+            )
+
+        def multiplier(U):
+            return p2_matvec(nodes, U) - F
+
+        return (
+            solve,
+            multiplier,
+            prolongate_p2,
+            transfer_l2_multiplier_p2,
+        )
+
+    else:
+        raise ValueError("degree must be 1 or 2")
+
+
+# ============================================================
+# 2. Benchmark one initialization strategy
+# ============================================================
+
+def benchmark(
+    method,
+    previous,
+    nodes,
+    solve,
+    prolongate,
+    l2_transfer,
+    repetitions,
+):
+    """
+    Repeat the same discrete solve and report median CPU time.
+
+    The FEM matrices are already assembled.
+
+    Initializations:
+        cold:
+            Solve unconstrained system inside PDAS.
+
+        original:
+            U0 = I_h U_H
+            Lambda0 = A_h U0 - F_h (inside PDAS).
+
+        l2:
+            U0 = I_h U_H
+            M_H mu_H = Lambda_H
+            Lambda0 = M_h I_h mu_H
+    """
+
+    initialization_times = []
+    solver_times = []
+    total_times = []
+
+    reference_U = None
+    reference_iterations = None
+    final_info = None
+
+    for repeat in range(repetitions):
+
+        # --------------------------------------------------
+        # Initialization CPU timing
+        # --------------------------------------------------
+
+        start = process_time()
+
+        if method == "cold":
+
+            U0 = None
+            Lambda0 = None
+
         else:
+
+            if previous is None:
+                raise ValueError(
+                    "Nested PDAS requires a coarse-grid solution"
+                )
 
             coarse_nodes, coarse_U, coarse_Lambda = previous
 
-            # ----------------------------------------------
-            # 3. Transfer the coarse solution.
-            # ----------------------------------------------
-
-            t0 = perf_counter()
+            # Primal transfer:
+            #
+            # U_h^0 = I_h U_H
 
             U0 = prolongate(
                 coarse_nodes,
@@ -152,93 +235,152 @@ def run_l2_nested(degree, maxiter=1000):
                 nodes,
             )
 
-            # ----------------------------------------------
-            # 4. L2-Riesz multiplier transfer.
-            #
-            # M_H mu_H = Lambda_H
-            #
-            # mu_h = I_h mu_H
-            #
-            # Lambda_h^0 = M_h mu_h
-            # ----------------------------------------------
+            if method == "original":
 
-            Lambda0 = transfer_multiplier(
-                coarse_nodes,
-                coarse_Lambda,
-                nodes,
-            )
+                # Original nested initialization.
+                #
+                # Lambda_h^0 = A_h U_h^0 - F_h
+                #
+                # The existing PDAS solver computes this
+                # internally when Lambda0 is None.
 
-            transfer_seconds = perf_counter() - t0
+                Lambda0 = None
 
-            # ----------------------------------------------
-            # 5. Solve the fine obstacle problem with PDAS.
-            # ----------------------------------------------
+            elif method == "l2":
 
-            t0 = perf_counter()
+                # L2-Riesz multiplier transfer:
+                #
+                # M_H mu_H = Lambda_H
+                #
+                # mu_h = I_h mu_H
+                #
+                # Lambda_h^0 = M_h mu_h
 
-            U, info = solve(
-                U0,
-                Lambda0,
-            )
+                Lambda0 = l2_transfer(
+                    coarse_nodes,
+                    coarse_Lambda,
+                    nodes,
+                )
 
-            solver_seconds = perf_counter() - t0
+            else:
+                raise ValueError(
+                    f"Unknown initialization method: {method}"
+                )
 
-            # ----------------------------------------------
-            # 6. Store numerical results and KKT diagnostics.
-            # ----------------------------------------------
-
-            rows.append({
-                "degree": degree,
-                "elements": M,
-                "dofs": len(U),
-                "initialization": "l2-riesz",
-                "status": "converged",
-                "pdas_iterations": info["iterations"],
-                "solver_seconds": solver_seconds,
-                "transfer_seconds": transfer_seconds,
-                "min_gap": info["min_gap"],
-                "min_multiplier": info["min_multiplier"],
-                "max_complementarity": (
-                    info["max_complementarity"]
-                ),
-            })
-
-            print(
-                f"P{degree}, M={M:>5,}: "
-                f"PDAS={info['iterations']:>3d}, "
-                f"solve={solver_seconds:.4f}s, "
-                f"transfer={transfer_seconds:.4f}s, "
-                f"min_gap={info['min_gap']:.2e}, "
-                f"min_lambda={info['min_multiplier']:.2e}, "
-                f"max_compl={info['max_complementarity']:.2e}",
-                flush=True,
-            )
+        after_initialization = process_time()
 
         # --------------------------------------------------
-        # 7. Save solution and multiplier for next mesh.
+        # Solve using the unchanged PDAS equations
         # --------------------------------------------------
 
-        previous = (
-            nodes,
-            U,
-            multiplier(U),
+        U, info = solve(
+            U0,
+            Lambda0,
         )
 
-    return rows
+        end = process_time()
+
+        # --------------------------------------------------
+        # Record CPU times
+        # --------------------------------------------------
+
+        initialization_times.append(
+            after_initialization - start
+        )
+
+        solver_times.append(
+            end - after_initialization
+        )
+
+        total_times.append(
+            end - start
+        )
+
+        # --------------------------------------------------
+        # Verify deterministic behavior
+        # --------------------------------------------------
+
+        if reference_U is None:
+
+            reference_U = U.copy()
+            reference_iterations = info["iterations"]
+
+        else:
+
+            same_iterations = (
+                info["iterations"] == reference_iterations
+            )
+
+            same_solution = np.allclose(
+                U,
+                reference_U,
+                rtol=0.0,
+                atol=1e-10,
+            )
+
+            if not (same_iterations and same_solution):
+                raise RuntimeError(
+                    "Repeated PDAS solves produced "
+                    "inconsistent results."
+                )
+
+        final_info = info
+
+        print(
+            f"    run {repeat + 1}/{repetitions}: "
+            f"CPU={end - start:.5f}s, "
+            f"PDAS={info['iterations']}",
+            flush=True,
+        )
+
+    # ------------------------------------------------------
+    # Median CPU times across all repetitions
+    # ------------------------------------------------------
+
+    return {
+        "U": reference_U,
+        "info": final_info,
+
+        "initialization_cpu": float(
+            np.median(initialization_times)
+        ),
+
+        "solver_cpu": float(
+            np.median(solver_times)
+        ),
+
+        "total_cpu": float(
+            np.median(total_times)
+        ),
+    }
 
 
 # ============================================================
-# Plot three initialization strategies
+# 3. Save numerical results
 # ============================================================
 
-def plot_comparison(
-    baseline_rows,
-    l2_rows,
-    path,
-):
-    """Plot cold, original nested and L2-nested PDAS."""
+def save_csv(rows, path):
 
-    rows = baseline_rows + l2_rows
+    with path.open(
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+
+        writer = csv.DictWriter(
+            file,
+            fieldnames=FIELDNAMES,
+        )
+
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+# ============================================================
+# 4. Plot P1 and P2 comparisons
+# ============================================================
+
+def plot_results(rows, path, repetitions):
 
     fig, axes = plt.subplots(
         2,
@@ -247,52 +389,67 @@ def plot_comparison(
         constrained_layout=True,
     )
 
+    axes[0, 0].set_title(
+        "PDAS iteration count"
+    )
+
+    axes[0, 1].set_title(
+        "Median CPU time"
+    )
+
     for i, degree in enumerate((1, 2)):
 
-        for method, label in LABELS.items():
+        for method in METHODS:
 
             subset = sorted(
-                (
+                [
                     row for row in rows
-                    if int(row["degree"]) == degree
-                    and row["initialization"] == method
-                    and row["status"] == "converged"
-                ),
-                key=lambda row: int(row["elements"]),
+                    if (
+                        row["degree"] == degree
+                        and row["method"] == method
+                    )
+                ],
+                key=lambda row: row["elements"],
             )
 
             if not subset:
                 continue
 
             elements = [
-                int(row["elements"])
+                row["elements"]
                 for row in subset
             ]
 
             iterations = [
-                int(row["pdas_iterations"])
+                row["pdas_iterations"]
                 for row in subset
             ]
 
-            seconds = [
-                float(row["solver_seconds"])
+            cpu_times = [
+                row["median_total_cpu_seconds"]
                 for row in subset
             ]
 
-            # PDAS iterations: logarithmic axes.
+            # ----------------------------------------------
+            # Left column: PDAS iterations
+            # ----------------------------------------------
+
             axes[i, 0].loglog(
                 elements,
                 iterations,
                 "o-",
-                label=label,
+                label=LABELS[method],
             )
 
-            # Solver runtime: logarithmic axes.
+            # ----------------------------------------------
+            # Right column: median CPU time
+            # ----------------------------------------------
+
             axes[i, 1].loglog(
                 elements,
-                seconds,
+                cpu_times,
                 "o-",
-                label=label,
+                label=LABELS[method],
             )
 
         axes[i, 0].set_ylabel(
@@ -300,8 +457,12 @@ def plot_comparison(
         )
 
         axes[i, 1].set_ylabel(
-            f"P{degree}: solver time [s]"
+            f"P{degree}: CPU time [s]"
         )
+
+        # ----------------------------------------------
+        # Common plot formatting
+        # ----------------------------------------------
 
         for ax in axes[i]:
 
@@ -309,12 +470,17 @@ def plot_comparison(
                 "number of elements M"
             )
 
+            ax.set_xscale("log")
+
             ax.xaxis.set_major_locator(
                 FixedLocator(LEVELS)
             )
 
             ax.xaxis.set_major_formatter(
-                ScalarFormatter()
+                FuncFormatter(
+                    lambda x, pos:
+                    f"{int(x):,}" if x in LEVELS else ""
+                )
             )
 
             ax.xaxis.set_minor_formatter(
@@ -324,7 +490,7 @@ def plot_comparison(
             ax.grid(
                 True,
                 which="both",
-                alpha=0.22,
+                alpha=0.23,
             )
 
         axes[i, 0].legend(
@@ -332,21 +498,15 @@ def plot_comparison(
             loc="upper left",
         )
 
-    axes[0, 0].set_title(
-        "PDAS iterations"
-    )
-
-    axes[0, 1].set_title(
-        "Solver time (excluding transfer)"
-    )
-
     fig.suptitle(
-        "Dirac obstacle problem: nested PDAS initialization"
+        "Dirac obstacle problem: "
+        "PDAS initialization comparison "
+        f"(median CPU time, {repetitions} runs)"
     )
 
     fig.savefig(
         path,
-        dpi=210,
+        dpi=220,
         bbox_inches="tight",
     )
 
@@ -354,100 +514,247 @@ def plot_comparison(
 
 
 # ============================================================
-# Main
+# 5. Main experiment
 # ============================================================
 
 def main():
 
-    baseline_path = (
-        ROOT
-        / "results"
-        / "p1_p2_nested_initializations_M10000.csv"
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=5,
     )
 
-    if not baseline_path.is_file():
-        raise FileNotFoundError(
-            f"Missing {baseline_path}. "
-            "Run the M=10000 cold/nested comparison first."
+    parser.add_argument(
+        "--max-elements",
+        type=int,
+        choices=(1000, 10000),
+        default=10000,
+    )
+
+    parser.add_argument(
+        "--maxiter",
+        type=int,
+        default=6000,
+    )
+
+    args = parser.parse_args()
+
+    if args.repeats < 1 or args.maxiter < 1:
+        parser.error(
+            "--repeats and --maxiter must be positive"
         )
 
-    # ------------------------------------------------------
-    # 1. Read only cold and original nested measurements.
-    # ------------------------------------------------------
+    results_dir = ROOT / "results"
+    figures_dir = ROOT / "figures"
 
-    with baseline_path.open(
-        newline="",
-        encoding="utf-8",
-    ) as file:
+    results_dir.mkdir(
+        exist_ok=True
+    )
 
-        baseline_rows = [
-            row
-            for row in csv.DictReader(file)
-            if row["initialization"] in (
-                "cold",
-                "recompute",
-            )
-        ]
+    figures_dir.mkdir(
+        exist_ok=True
+    )
 
-    # ------------------------------------------------------
-    # 2. Run only the L2-based nested experiments.
-    # ------------------------------------------------------
-
-    l2_rows = []
-
-    for degree in (1, 2):
-        l2_rows.extend(
-            run_l2_nested(degree)
-        )
-
-    # ------------------------------------------------------
-    # 3. Save results.
-    # ------------------------------------------------------
-
-    results_path = (
-        ROOT
-        / "results"
+    csv_path = (
+        results_dir
         / "p1_p2_l2_multiplier_transfer.csv"
     )
 
     figure_path = (
-        ROOT
-        / "figures"
+        figures_dir
         / "p1_p2_l2_multiplier_transfer.png"
     )
 
-    results_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    rows = []
 
-    figure_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    # ------------------------------------------------------
+    # Run P1 and P2
+    # ------------------------------------------------------
 
-    with results_path.open(
-        "w",
-        newline="",
-        encoding="utf-8",
-    ) as file:
+    for degree in (1, 2):
 
-        writer = csv.DictWriter(
-            file,
-            fieldnames=list(l2_rows[0]),
+        print(
+            f"\nP{degree}: CPU benchmark",
+            flush=True,
         )
 
-        writer.writeheader()
-        writer.writerows(l2_rows)
+        # Each nested method has its own previous
+        # solution and multiplier.
 
-    plot_comparison(
-        baseline_rows,
-        l2_rows,
+        previous = {
+            "original": None,
+            "l2": None,
+        }
+
+        for M in LEVELS:
+
+            if M > args.max_elements:
+                continue
+
+            nodes = np.linspace(
+                0.0,
+                1.0,
+                M + 1,
+            )
+
+            # ------------------------------------------------
+            # Assemble FEM problem once.
+            #
+            # Assembly is excluded from CPU measurements.
+            # ------------------------------------------------
+
+            solve, multiplier, prolongate, l2_transfer = (
+                prepare_problem(
+                    degree,
+                    nodes,
+                    args.maxiter,
+                )
+            )
+
+            cold_U = None
+
+            # ------------------------------------------------
+            # Compare three initialization methods
+            # ------------------------------------------------
+
+            for method in METHODS:
+
+                # Initial mesh has no previous solution.
+                # Therefore only cold PDAS is available.
+
+                if M == LEVELS[0] and method != "cold":
+                    continue
+
+                print(
+                    f"P{degree}, M={M:,}, "
+                    f"{LABELS[method]}",
+                    flush=True,
+                )
+
+                result = benchmark(
+                    method=method,
+                    previous=previous.get(method),
+                    nodes=nodes,
+                    solve=solve,
+                    prolongate=prolongate,
+                    l2_transfer=l2_transfer,
+                    repetitions=args.repeats,
+                )
+
+                U = result["U"]
+                info = result["info"]
+
+                # --------------------------------------------
+                # Store cold solution for validation
+                # --------------------------------------------
+
+                if method == "cold":
+                    cold_U = U
+
+                # --------------------------------------------
+                # Check identical discrete solutions
+                # --------------------------------------------
+
+                difference = float(
+                    np.max(
+                        np.abs(U - cold_U)
+                    )
+                )
+
+                if (
+                    not np.isfinite(difference)
+                    or difference > 1e-8
+                ):
+                    raise RuntimeError(
+                        f"P{degree}, M={M}, {method}: "
+                        f"solution differs from cold "
+                        f"by {difference:.3e}"
+                    )
+
+                # --------------------------------------------
+                # Store solution and algebraic multiplier
+                # for nested initialization on the next mesh
+                # --------------------------------------------
+
+                state = (
+                    nodes.copy(),
+                    U.copy(),
+                    multiplier(U),
+                )
+
+                if M == LEVELS[0]:
+
+                    previous["original"] = state
+                    previous["l2"] = state
+
+                elif method in previous:
+
+                    previous[method] = state
+
+                # --------------------------------------------
+                # Store results
+                # --------------------------------------------
+
+                row = {
+                    "degree": degree,
+                    "elements": M,
+                    "dofs": len(U),
+                    "method": method,
+                    "repetitions": args.repeats,
+                    "pdas_iterations": info["iterations"],
+
+                    "median_initialization_cpu_seconds": (
+                        result["initialization_cpu"]
+                    ),
+
+                    "median_solver_cpu_seconds": (
+                        result["solver_cpu"]
+                    ),
+
+                    "median_total_cpu_seconds": (
+                        result["total_cpu"]
+                    ),
+
+                    "max_difference_to_cold": difference,
+                    "min_gap": info["min_gap"],
+                    "min_multiplier": info["min_multiplier"],
+                    "max_complementarity": (
+                        info["max_complementarity"]
+                    ),
+                }
+
+                rows.append(row)
+
+                # Save successful results immediately.
+                save_csv(
+                    rows,
+                    csv_path,
+                )
+
+                print(
+                    f"  Median total CPU="
+                    f"{result['total_cpu']:.5f}s, "
+                    f"PDAS={info['iterations']}, "
+                    f"max difference={difference:.2e}",
+                    flush=True,
+                )
+
+    # ------------------------------------------------------
+    # Generate final figure
+    # ------------------------------------------------------
+
+    plot_results(
+        rows,
         figure_path,
+        args.repeats,
     )
 
+    print()
     print(
-        f"Saved: {results_path.relative_to(ROOT)}"
+        f"Saved: {csv_path.relative_to(ROOT)}"
     )
 
     print(
