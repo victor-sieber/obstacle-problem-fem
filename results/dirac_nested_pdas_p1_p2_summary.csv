@@ -1,0 +1,3 @@
+degree,adaptive_refinements,mesh_levels,timing_repetitions_per_mesh_and_method,final_dofs,final_cold_iterations,final_nested_iterations,cold_sum_of_medians_seconds,nested_sum_of_medians_seconds,solver_stage_speedup,max_solution_difference
+1,17,18,5,1071,245,5,0.5465140000000002,0.019932999999999756,27.41754878844162,0.0
+2,20,21,5,129,51,4,0.056203999999999976,0.006438999999999584,8.728684578351237,1.325606291402437e-13
