@@ -221,89 +221,29 @@ def exact_derivative_dirac(x):
     return du
 
 
-def compute_errors(
-    nodes,
-    U,
-):
-    x = np.linspace(
-        0.0,
-        1.0,
-        20001,
+
+def compute_errors(nodes, U):
+    """P1 Dirac L2 and H1 errors using elementwise Gauss quadrature.
+
+    The existing P1/P2 Dirac routine uses 12 Gauss points
+    and splits elements at alpha, gamma and beta.
+    """
+    from experiments.p1_p2_dirac_comparison import (
+        compute_errors as compute_gauss_errors,
     )
 
-    uh = interpolate_fem_solution(
+    from src.fem import (
+        evaluate_fem_solution,
+        evaluate_fem_derivative,
+    )
+
+    return compute_gauss_errors(
         nodes,
         U,
-        x,
+        evaluate_fem_solution,
+        evaluate_fem_derivative,
     )
 
-    u = exact_solution_dirac(x)
-
-    l2_error = np.sqrt(
-        np.trapz(
-            (uh - u) ** 2,
-            x,
-        )
-    )
-
-    h1_squared = 0.0
-
-    for element in range(
-        len(nodes) - 1
-    ):
-        a = nodes[element]
-        b = nodes[element + 1]
-
-        mask = (
-            (x >= a)
-            & (x <= b)
-        )
-
-        x_local = x[mask]
-
-        if len(x_local) < 2:
-            continue
-
-        if element == 0:
-            u_left = 0.0
-        else:
-            u_left = U[
-                element - 1
-            ]
-
-        if (
-            element
-            == len(nodes) - 2
-        ):
-            u_right = 0.0
-        else:
-            u_right = U[element]
-
-        uh_derivative = (
-            u_right - u_left
-        ) / (b - a)
-
-        exact_derivative = (
-            exact_derivative_dirac(
-                x_local
-            )
-        )
-
-        h1_squared += np.trapz(
-            (
-                uh_derivative
-                - exact_derivative
-            )
-            ** 2,
-            x_local,
-        )
-
-    return (
-        float(l2_error),
-        float(
-            np.sqrt(h1_squared)
-        ),
-    )
 
 
 def main():
