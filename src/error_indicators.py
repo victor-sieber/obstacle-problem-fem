@@ -7,6 +7,12 @@ from src.fem import (
 )
 
 
+from src.multiplier_l2_transfer import (
+    p1_riesz_coefficients,
+    p2_riesz_coefficients,
+)
+
+
 def compute_p1_jump_indicator(nodes, U):
     """
     Compute the original P1 slope-jump indicator
@@ -160,11 +166,6 @@ def reconstruct_p1_multiplier_l2(
         dtype=float,
     )
 
-    A = np.asarray(
-        A,
-        dtype=float,
-    )
-
     F = np.asarray(
         F,
         dtype=float,
@@ -183,7 +184,7 @@ def reconstruct_p1_multiplier_l2(
             "per interior P1 node."
         )
 
-    if A.shape != (
+    if not callable(A) and A.shape != (
         n_interior,
         n_interior,
     ):
@@ -196,29 +197,17 @@ def reconstruct_p1_multiplier_l2(
     #
     # Lambda = A U - F.
     # ---------------------------------------------
-    Lambda = (
-        A @ U
-        - F
-    )
+    Au = A(U) if callable(A) else A @ U
+    Lambda = np.asarray(Au, dtype=float) - F
+    if Lambda.shape != (n_interior,):
+        raise ValueError("Invalid stiffness action shape")
 
     # ---------------------------------------------
     # L2 Riesz map on V_h.
     # ---------------------------------------------
-    M = assemble_mass_matrix(
-        nodes
-    )
-
+    M = None
     if method == "consistent":
-
-        # Solve
-        #
-        # M mu = Lambda.
-        #
-        # np.linalg.solve does NOT form M^{-1}.
-        mu = np.linalg.solve(
-            M,
-            Lambda,
-        )
+        mu = p1_riesz_coefficients(nodes, Lambda)
 
     elif method == "lumped":
 
@@ -622,11 +611,6 @@ def reconstruct_p2_multiplier_l2(
         dtype=float,
     )
 
-    A = np.asarray(
-        A,
-        dtype=float,
-    )
-
     F = np.asarray(
         F,
         dtype=float,
@@ -647,7 +631,7 @@ def reconstruct_p2_multiplier_l2(
             "for every interior P2 DOF."
         )
 
-    if A.shape != (
+    if not callable(A) and A.shape != (
         n_interior,
         n_interior,
     ):
@@ -656,22 +640,14 @@ def reconstruct_p2_multiplier_l2(
         )
 
     # Discrete multiplier functional.
-    Lambda = A @ U - F
+    Au = A(U) if callable(A) else A @ U
+    Lambda = np.asarray(Au, dtype=float) - F
+    if Lambda.shape != (n_interior,):
+        raise ValueError("Invalid stiffness action shape")
 
-    # L2 Riesz map.
-    M = assemble_mass_matrix_p2(
-        nodes
-    )
-
-    # Solve
-    #
-    #     M mu = Lambda.
-    #
-    # np.linalg.solve does not form M^{-1}.
-    mu = np.linalg.solve(
-        M,
-        Lambda,
-    )
+    # Matrix-free L2-Riesz reconstruction.
+    M = None
+    mu = p2_riesz_coefficients(nodes, Lambda)
 
     return {
         "Lambda": Lambda,

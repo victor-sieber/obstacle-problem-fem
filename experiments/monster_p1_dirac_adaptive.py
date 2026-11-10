@@ -43,7 +43,6 @@ from src.error_indicators import (
 )
 
 from src.fem import (
-    assemble_stiffness_matrix,
     create_mesh,
 )
 
@@ -545,8 +544,8 @@ def run(
         # Dirac loads remain in the FEM load vector F.
         # ------------------------------------------------
 
-        A_indicator = assemble_stiffness_matrix(
-            nodes
+        A_indicator = lambda values: matvec(
+            lower, diagonal, upper, values
         )
 
         indicator = compute_p1_residual_indicator(

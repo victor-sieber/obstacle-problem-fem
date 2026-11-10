@@ -41,7 +41,6 @@ from src.error_indicators import (
 from src.fem import create_mesh
 
 from src.fem_p2 import (
-    assemble_stiffness_matrix,
     evaluate_fem_derivative,
     evaluate_fem_solution,
 )
@@ -533,8 +532,8 @@ def run(tol, max_levels, maxiter, repeats):
         # No change to the indicator formula.
         # ------------------------------------------------
 
-        A_indicator = assemble_stiffness_matrix(
-            nodes
+        A_indicator = lambda values: p2_matvec(
+            nodes, values
         )
 
         indicator = compute_p2_residual_indicator(
