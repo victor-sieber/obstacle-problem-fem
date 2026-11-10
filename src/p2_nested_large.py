@@ -387,9 +387,9 @@ def solve_pdas_p2(
 
         lam = p2_matvec(nodes, U) - F
 
-        new_active = (
-            lam - c * (U + 1.0) > 0.0
-        )
+        new_active = np.empty_like(active)
+        new_active[active] = lam[active] > 0.0
+        new_active[~active] = U[~active] < -1.0
 
         changed = int(
             np.count_nonzero(new_active != active)

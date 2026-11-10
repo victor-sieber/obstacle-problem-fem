@@ -224,9 +224,9 @@ def solve_pdas_p1(
         )
 
         # Original active-set update.
-        new_active = (
-            multiplier - c * (V - psi) > 0.0
-        )
+        new_active = np.empty_like(active)
+        new_active[active] = multiplier[active] > 0.0
+        new_active[free] = V[free] < psi[free]
 
         changed = int(
             np.count_nonzero(new_active != active)
