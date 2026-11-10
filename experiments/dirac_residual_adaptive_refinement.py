@@ -41,13 +41,8 @@ INITIAL_ELEMENTS = 20
 
 THETA = 0.5
 
-# Main stopping criterion:
-#
-#     eta_h <= ETA_TOL.
-#
-# 0.05 was only a first implementation check.
-# Now we use a substantially smaller tolerance.
-ETA_TOL = 1.0e-2
+# Relative stopping criterion: eta_h / eta_0 <= REL_ETA_TOL.
+REL_ETA_TOL = 1.0e-2
 
 # Safety caps only.
 MAX_INTERIOR_DOFS = 5000
@@ -134,7 +129,7 @@ def run_adaptive_refinement():
         -> reconstruct lambda_h
         -> compute eta_K
         -> compute eta_h
-        -> stop if eta_h <= tolerance
+        -> stop if eta_h / eta_0 <= relative tolerance
         -> mark
         -> bisect
         -> repeat.
@@ -144,6 +139,7 @@ def run_adaptive_refinement():
     )
 
     history = []
+    eta0 = None
 
     for level in range(
         MAX_REFINEMENTS + 1
@@ -171,6 +167,12 @@ def run_adaptive_refinement():
             )
         )
 
+        if not np.isfinite(eta_global) or eta_global < 0:
+            raise ValueError("Invalid estimator")
+        if eta0 is None:
+            eta0 = eta_global
+        eta_ratio = 0.0 if eta0 == 0.0 else eta_global / eta0
+
         n_elements = (
             len(nodes) - 1
         )
@@ -191,6 +193,7 @@ def run_adaptive_refinement():
             "indicator": indicator,
 
             "eta_global": eta_global,
+            "eta_ratio": eta_ratio,
 
             "max_eta": float(
                 np.max(eta)
@@ -220,11 +223,11 @@ def run_adaptive_refinement():
         # -----------------------------------------
         # Main stopping criterion
         # -----------------------------------------
-        if eta_global <= ETA_TOL:
+        if eta_ratio <= REL_ETA_TOL:
 
             history[-1][
                 "stop_reason"
-            ] = "indicator tolerance"
+            ] = "relative estimator tolerance"
 
             break
 
@@ -290,7 +293,7 @@ def print_history(
     print(
         "level  elements  DOFs   marked  "
         "min(h)       max(h)       "
-        "max(eta_K)   eta_h        "
+        "max(eta_K)   eta_h        eta/eta0    "
         "H1 error     L2 error     PDAS"
     )
 
@@ -328,6 +331,7 @@ def print_history(
             f"{np.max(h):<12.4e} "
             f"{snapshot['max_eta']:<12.4e} "
             f"{snapshot['eta_global']:<12.4e} "
+            f"{snapshot['eta_ratio']:<11.3e} "
             f"{snapshot['h1_error']:<12.4e} "
             f"{snapshot['l2_error']:<12.4e} "
             f"{snapshot['pdas_iterations']}"
@@ -648,8 +652,8 @@ def main():
     )
 
     print(
-        "Indicator tolerance:",
-        ETA_TOL,
+        "Relative estimator tolerance:",
+        REL_ETA_TOL,
     )
 
     history = (

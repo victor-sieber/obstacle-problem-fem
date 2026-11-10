@@ -69,6 +69,7 @@ FIELDS = [
     "min_h",
     "max_h",
     "eta_h",
+    "eta_ratio",
     "h1_error",
     "l2_error",
     "cold_iterations",
@@ -348,6 +349,7 @@ def run(tol, max_levels, maxiter, repeats):
 
     previous = None
     rows = []
+    eta0 = None
 
     # Short tests receive distinct output filenames.
     suffix = (
@@ -378,7 +380,7 @@ def run(tol, max_levels, maxiter, repeats):
     print(
         f"P2 monster: "
         f"theta={original.THETA:g}, "
-        f"tol={tol:g}, "
+        f"rel_tol={tol:g}, "
         f"max_levels={max_levels}, "
         f"repetitions={repeats}",
         flush=True,
@@ -556,6 +558,12 @@ def run(tol, max_levels, maxiter, repeats):
         )
 
         # ------------------------------------------------
+        if not np.isfinite(eta_global) or eta_global < 0:
+            raise ValueError("Invalid estimator")
+        if eta0 is None:
+            eta0 = eta_global
+        eta_ratio = 0.0 if eta0 == 0.0 else eta_global / eta0
+
         # G. Actual H1 and L2 errors
         # ------------------------------------------------
 
@@ -590,6 +598,7 @@ def run(tol, max_levels, maxiter, repeats):
             "min_h": float(np.min(h)),
             "max_h": float(np.max(h)),
             "eta_h": eta_global,
+            "eta_ratio": eta_ratio,
             "h1_error": h1_error,
             "l2_error": l2_error,
 
@@ -644,10 +653,10 @@ def run(tol, max_levels, maxiter, repeats):
         # J. Original adaptive stopping conditions
         # ------------------------------------------------
 
-        if eta_global <= tol:
+        if eta_ratio <= tol:
 
             row["stop_reason"] = (
-                "indicator tolerance"
+                "relative estimator tolerance"
             )
 
         elif dofs >= original.MAX_INTERIOR_DOFS:
@@ -714,7 +723,7 @@ def run(tol, max_levels, maxiter, repeats):
             f"level={level:2d} "
             f"M={M:5d} "
             f"DOFs={dofs:5d} "
-            f"eta={eta_global:.3e} "
+            f"eta={eta_global:.3e} rel={eta_ratio:.3e} "
             f"H1={h1_error:.3e} "
             f"L2={l2_error:.3e} "
             f"cold={cold_info['iterations']:4d} "
@@ -800,9 +809,9 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--tol",
+        "--rel-tol",
         type=float,
-        default=original.ETA_TOL,
+        default=original.REL_ETA_TOL,
     )
 
     parser.add_argument(
@@ -826,7 +835,7 @@ def main():
     args = parser.parse_args()
 
     if (
-        args.tol <= 0
+        args.rel_tol <= 0
         or args.max_levels < 0
         or args.maxiter < 1
         or args.repeats < 1
@@ -837,7 +846,7 @@ def main():
         )
 
     run(
-        args.tol,
+        args.rel_tol,
         args.max_levels,
         args.maxiter,
         args.repeats,
