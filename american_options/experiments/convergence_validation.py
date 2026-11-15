@@ -172,7 +172,7 @@ def main():
 
     figures_dir = (
         ROOT
-        / "figures"
+        / "figures" / "american_options"
     )
 
     figures_dir.mkdir(

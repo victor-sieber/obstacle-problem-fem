@@ -21,13 +21,18 @@ The current project includes:
 - singular-load experiments with Dirac delta forcing,
 - P1-P2 comparisons under smooth and reduced-regularity settings.
 
-### Current / upcoming work
+## Practicum experiments
 
-- test a local P1 jump indicator for adaptive mesh refinement,
-- investigate coarse-to-fine / nested initialization of PDAS,
-- compare adaptive and uniform refinement if the indicator is useful,
-- consolidate the numerical experiments and prepare the final presentation.
+| Topic | Run with `python -m` | Figures |
+| --- | --- | --- |
+| Sine–Dirac | `experiments.key.sine_dirac.convergence` | [Sine–Dirac figures](figures/key/sine_dirac/) |
+| Obstacle problem without a prescribed exact solution | `experiments.key.no_exact.convergence` | [Contact and estimator figures](figures/key/no_exact/) |
+| PDAS warm starts | `experiments.key.pdas_scaling.warm_starts` | [PDAS scaling figures](figures/key/pdas_scaling/) |
 
+Regenerate the first two sets of figures with `python -m experiments.key.plot_benchmarks`.
+Validation scripts are grouped by benchmark, estimator, or solver under
+`experiments/validation/`. Tables and solution snapshots follow the same topic layout under
+`results/`.
 
 ## Continuous obstacle problem
 
@@ -153,13 +158,13 @@ Because an exact solution is available, the finite element approximation can be 
 
 ## Numerical experiments
 
-`experiments/run_example.py` solves the benchmark problem for a fixed mesh and compares:
+`experiments/validation/benchmarks/run_example.py` solves the benchmark problem for a fixed mesh and compares:
 
 - the exact solution,
 - the P1 finite element approximation,
 - the obstacle.
 
-`experiments/convergence.py` repeats the computation for increasingly fine meshes and evaluates the numerical error.
+`experiments/validation/benchmarks/convergence.py` repeats the computation for increasingly fine meshes and evaluates the numerical error.
 
 For the benchmark with $\alpha=0.2$, the experiments give approximately
 
@@ -195,7 +200,7 @@ See [`american_options/README.md`](american_options/README.md) for the financial
 
 | American put value and payoff | Early-exercise boundary |
 | --- | --- |
-| ![American put value](figures/american_put_value.png) | ![American exercise boundary](figures/american_put_boundary.png) |
+| ![American put value](figures/american_options/american_put_value.png) | ![American exercise boundary](figures/american_options/american_put_boundary.png) |
 
 The American option value stays above the immediate-exercise payoff. The recovered free boundary separates the exercise and continuation regions.
 
@@ -207,7 +212,7 @@ Close to expiration, the option value approaches the immediate-exercise payoff. 
 
 The marked contact point is the estimated early-exercise boundary. It separates the exercise region, where the option value coincides with the payoff, from the continuation region, where retaining the option is more valuable than exercising immediately.
 
-![American option obstacle evolution](figures/american_put_evolution.gif)
+![American option obstacle evolution](figures/american_options/american_put_evolution.gif)
 
 ## Self-directed extension: Local LLM analytics layer
 
@@ -297,13 +302,13 @@ pip install -r requirements.txt
 Run the obstacle-problem benchmark:
 
 ```bash
-python experiments/run_example.py
+python experiments/validation/benchmarks/run_example.py
 ```
 
 Run the obstacle-problem convergence study:
 
 ```bash
-python experiments/convergence.py
+python experiments/validation/benchmarks/convergence.py
 ```
 
 Run the American put example:

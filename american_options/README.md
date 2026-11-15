@@ -61,7 +61,7 @@ The positive difference represents the value of the American early-exercise feat
 
 | American put value and payoff | Early-exercise boundary |
 | --- | --- |
-| ![American put value](../figures/american_put_value.png) | ![American exercise boundary](../figures/american_put_boundary.png) |
+| ![American put value](../figures/american_options/american_put_value.png) | ![American exercise boundary](../figures/american_options/american_put_boundary.png) |
 
 The American put value remains above the immediate-exercise payoff.
 
@@ -75,7 +75,7 @@ Close to expiration, the option value approaches the payoff obstacle. As the rem
 
 The marked contact point tracks the approximate early-exercise boundary.
 
-![American option obstacle evolution](../figures/american_put_evolution.gif)
+![American option obstacle evolution](../figures/american_options/american_put_evolution.gif)
 
 ## Validation against a CRR benchmark
 
@@ -102,7 +102,7 @@ The 200-by-200 benchmark therefore provides close agreement with an independent 
 
 | Joint refinement | Difference to CRR |
 | --- | --- |
-| ![American put convergence](../figures/american_put_convergence.png) | ![American validation error](../figures/american_put_validation_error.png) |
+| ![American put convergence](../figures/american_options/american_put_convergence.png) | ![American validation error](../figures/american_options/american_put_validation_error.png) |
 
 ## Deterministic analytics layer
 

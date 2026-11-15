@@ -282,7 +282,7 @@ def main():
 
     output_path = (
         ROOT
-        / "figures"
+        / "figures" / "american_options"
         / "american_put_evolution.gif"
     )
 

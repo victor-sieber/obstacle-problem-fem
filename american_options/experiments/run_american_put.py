@@ -56,7 +56,7 @@ def main():
         f"{result['max_solver_iterations']}"
     )
 
-    figures = ROOT / "figures"
+    figures = ROOT / "figures" / "american_options"
 
     figures.mkdir(
         exist_ok=True
