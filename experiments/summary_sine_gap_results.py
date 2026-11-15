@@ -33,8 +33,8 @@ for degree in (1, 2):
         else:
             print('  No separated active/free diagnostics; rerun with integrated driver.')
         print(f"  finite data: {'PASS' if finite else 'FAIL'}")
-        if method == "adaptive":
-            reached = float(last["eta_ratio"]) <= 1e-3
-            print(f"  relative estimator target: {'REACHED' if reached else 'NOT REACHED'}")
-            if reached and last["stop_reason"] != "relative_estimator":
-                print('  WARNING: stopping label does not match target')
+        if "pdas_stop_reason" in last:
+            print(f"  PDAS stop: {last['pdas_stop_reason']}, "
+                  f"same-mesh indicator ratio: {last['pdas_eta_ratio'] or 'undefined'}")
+        elif method == "adaptive":
+            print(f"  archived outer stop: {last['stop_reason']}")

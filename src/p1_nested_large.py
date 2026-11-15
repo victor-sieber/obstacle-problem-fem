@@ -3,6 +3,8 @@
 
 import numpy as np
 
+from src.pdas_indicator import passes_nodal_kkt
+
 
 ALPHA = 1.0 / 3.0
 BETA = 2.0 / 3.0
@@ -288,6 +290,7 @@ def solve_pdas_p1_gap(
     c=1.0,
     maxiter=50,
     verbose=False,
+    stop_if=None,
 ):
     """PDAS in the obstacle gap g=u+1, with the same KKT conditions.
 
@@ -304,8 +307,8 @@ def solve_pdas_p1_gap(
     rhs = _p1_gap_load(lower, diagonal, upper, F)
 
     if initial_solution is None:
-        unconstrained_gap = thomas(lower, diagonal, upper, rhs)
-        active = unconstrained_gap <= 0.0
+        gap0 = thomas(lower, diagonal, upper, rhs)
+        active = gap0 <= 0.0
     else:
         V0 = np.asarray(initial_solution, dtype=float)
         if V0.shape != (n,):
@@ -318,6 +321,10 @@ def solve_pdas_p1_gap(
             if Lambda0.shape != (n,):
                 raise ValueError("Incorrect initial multiplier")
         active = Lambda0 - c * gap0 > 0.0
+
+    rejected_indicator_steps = []
+    if stop_if is not None:
+        stop_if(gap0, matvec(lower, diagonal, upper, gap0) - rhs)
 
     for iteration in range(1, maxiter + 1):
         free = ~active
@@ -346,9 +353,17 @@ def solve_pdas_p1_gap(
                 f"active={np.count_nonzero(new_active)}",
                 flush=True,
             )
-        if changed == 0:
+        relative_target = stop_if is not None and stop_if(gap, multiplier)
+        relative_stop = relative_target and passes_nodal_kkt(gap, multiplier, active)
+        if relative_target and not relative_stop:
+            rejected_indicator_steps.append(iteration)
+        if changed == 0 or relative_stop:
             return gap - 1.0, {
                 "iterations": iteration,
+                "pdas_stop_reason": ("relative_indicator" if relative_stop
+                                     else "active_set_stable"),
+                "active_set_stable": changed == 0,
+                "pdas_rejected_indicator_steps": rejected_indicator_steps,
                 "active_dofs": int(np.count_nonzero(active)),
                 "min_gap": float(np.min(gap)),
                 "min_multiplier": float(np.min(multiplier)),

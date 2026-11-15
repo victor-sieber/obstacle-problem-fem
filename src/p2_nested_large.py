@@ -3,6 +3,8 @@
 
 import numpy as np
 
+from src.pdas_indicator import passes_nodal_kkt
+
 from src.p1_nested_large import thomas
 
 
@@ -511,6 +513,7 @@ def solve_pdas_p2_gap(
     c=1.0,
     maxiter=100,
     verbose=False,
+    stop_if=None,
 ):
     """PDAS in the obstacle gap g=u+1 with static condensation."""
     M = len(nodes) - 1
@@ -522,10 +525,10 @@ def solve_pdas_p2_gap(
     rhs = join_p2(Fv_gap, Fm_gap)
 
     if initial_solution is None:
-        unconstrained_gap = solve_gap_p2_on_active_set(
+        gap0 = solve_gap_p2_on_active_set(
             nodes, Fv_gap, Fm_gap, np.zeros(n, dtype=bool)
         )
-        active = unconstrained_gap <= 0.0
+        active = gap0 <= 0.0
     else:
         initial = np.asarray(initial_solution, dtype=float)
         if initial.shape != (n,):
@@ -538,6 +541,10 @@ def solve_pdas_p2_gap(
             if lam0.shape != (n,):
                 raise ValueError("Incorrect initial multiplier")
         active = lam0 - c * gap0 > 0.0
+
+    rejected_indicator_steps = []
+    if stop_if is not None:
+        stop_if(gap0, p2_matvec(nodes, gap0) - rhs)
 
     for iteration in range(1, maxiter + 1):
         gap = solve_gap_p2_on_active_set(nodes, Fv_gap, Fm_gap, active)
@@ -554,9 +561,17 @@ def solve_pdas_p2_gap(
                 f"active={np.count_nonzero(new_active)}",
                 flush=True,
             )
-        if changed == 0:
+        relative_target = stop_if is not None and stop_if(gap, lam)
+        relative_stop = relative_target and passes_nodal_kkt(gap, lam, active)
+        if relative_target and not relative_stop:
+            rejected_indicator_steps.append(iteration)
+        if changed == 0 or relative_stop:
             return gap - 1.0, {
                 "iterations": iteration,
+                "pdas_stop_reason": ("relative_indicator" if relative_stop
+                                     else "active_set_stable"),
+                "active_set_stable": changed == 0,
+                "pdas_rejected_indicator_steps": rejected_indicator_steps,
                 "active_dofs": int(np.count_nonzero(active)),
                 "min_gap": float(np.min(gap)),
                 "min_multiplier": float(np.min(lam)),

@@ -5,6 +5,7 @@ unknown W = U - I_h(sin(pi*x)), with constant obstacle -1.
 """
 
 import argparse
+from functools import partial
 import numpy as np
 from numpy.polynomial.legendre import leggauss
 
@@ -24,6 +25,7 @@ from src.error_indicators import (
     compute_p1_residual_indicator,
     compute_p2_residual_indicator,
 )
+from src.pdas_indicator import PDASIndicator
 from src.p1_nested_large import (
     assemble_p1_dirac, matvec, solve_pdas_p1_gap,
 )
@@ -115,7 +117,8 @@ def _stable_derivatives(nodes, degree, gap, epsilon):
 
 
 def solve_on_mesh(nodes, degree, epsilon=1.0, maxiter=1000,
-                  initial_solution=None, initial_multiplier=None):
+                  initial_solution=None, initial_multiplier=None,
+                  *, measure_pdas=False, pdas_rel_tol=None):
     """Solve physical obstacle u >= -1+I_h(epsilon*sin(pi*x)).
 
     Compute the physical KKT multiplier in the stable gap system, then
@@ -140,11 +143,7 @@ def solve_on_mesh(nodes, degree, epsilon=1.0, maxiter=1000,
         # Exact P1 Ritz identity: A_h I_h sin = (pi^2 sin,phi_h).
         # Hence the corrected RHS is F0, without unstable subtraction.
         F_shift = F0.copy()
-        W, info = solve_pdas_p1_gap(
-            nodes, lower, diagonal, upper, F_shift,
-            initial_solution=initial_solution,
-            initial_multiplier=initial_multiplier, maxiter=maxiter,
-        )
+        solve_gap = partial(solve_pdas_p1_gap, nodes, lower, diagonal, upper, F_shift)
         evaluate, derivative = eval_p1, grad_p1
     else:
         F0v, F0m = assemble_p2_dirac(nodes)
@@ -161,34 +160,40 @@ def solve_on_mesh(nodes, degree, epsilon=1.0, maxiter=1000,
         Fv_shift = np.zeros(M + 1)
         Fv_shift[1:-1] = F_shift[1::2]
         Fm_shift = F_shift[0::2]
-        W, info = solve_pdas_p2_gap(
-            nodes, Fv_shift, Fm_shift,
-            initial_solution=initial_solution,
-            initial_multiplier=initial_multiplier, maxiter=maxiter,
-        )
+        solve_gap = partial(solve_pdas_p2_gap, nodes, Fv_shift, Fm_shift)
         evaluate, derivative = eval_p2, grad_p2
 
-    # The gap solver computes g=W+1 *before* subtraction of 1 loses digits.
+    def evaluate_indicator(gap, multiplier):
+        physical = (gap - 1.0) + G
+        slopes, derivatives = _stable_derivatives(nodes, degree, gap, epsilon)
+        load = partial(regular_load, epsilon=epsilon)
+        if degree == 1:
+            return compute_p1_residual_indicator(
+                nodes, physical, action, F, load,
+                Lambda_override=multiplier, slopes_override=slopes,
+            )
+        return compute_p2_residual_indicator(
+            nodes, physical, action, F, load,
+            Lambda_override=multiplier, derivatives_override=derivatives,
+        )
+
+    monitor = (PDASIndicator(evaluate_indicator, pdas_rel_tol)
+               if measure_pdas or pdas_rel_tol is not None else None)
+    W, info = solve_gap(
+        initial_solution=initial_solution,
+        initial_multiplier=initial_multiplier, maxiter=maxiter, stop_if=monitor,
+    )
     gap_coefficients = np.asarray(info["gap_coefficients"], dtype=float)
     Lambda = np.asarray(info["dual_coefficients"], dtype=float)
     U = W + G
-    slopes, derivatives = _stable_derivatives(
-        nodes, degree, gap_coefficients, epsilon
-    )
-    if degree == 1:
-        indicator = compute_p1_residual_indicator(
-            nodes, U, action, F,
-            lambda x: regular_load(x, epsilon),
-            Lambda_override=Lambda, slopes_override=slopes,
-        )
-    else:
-        indicator = compute_p2_residual_indicator(
-            nodes, U, action, F,
-            lambda x: regular_load(x, epsilon),
-            Lambda_override=Lambda, derivatives_override=derivatives,
-        )
+    indicator = (monitor.indicator if monitor is not None
+                 else evaluate_indicator(gap_coefficients, Lambda))
 
     info = dict(info)
+    if monitor is not None:
+        info["pdas_eta_history"] = monitor.history
+        info["pdas_eta_ratio"] = monitor.ratio
+        info["pdas_rel_tol"] = monitor.relative_tolerance
     info.update({
         "min_gap_physical": float(np.min(gap_coefficients)),
         "min_multiplier_physical": float(np.min(Lambda)),

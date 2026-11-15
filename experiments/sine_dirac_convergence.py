@@ -1,11 +1,13 @@
 """Uniform/adaptive P1/P2 convergence, using the same nested L2-PDAS engine.
 
 Sine benchmark: epsilon=1, original Dirac point loads and exact solution.
-Adaptive: maximum marking theta=0.5; stop eta_l/eta_0 <= rel_tol.
-Uniform: bisect all elements; DOF cap limits both study arms.
+Adaptive: maximum marking theta=0.5. Uniform: bisect all elements.
+The PDAS indicator tolerance is within each mesh. Mesh budgets are separate.
 """
 import argparse
 import csv
+import json
+from functools import partial
 from pathlib import Path
 from time import perf_counter
 import numpy as np
@@ -20,13 +22,14 @@ from experiments.sine_perturbed_dirac import (solve_on_mesh, compute_errors)
 ROOT = Path(__file__).resolve().parents[1]
 COLUMNS = ("benchmark", "degree", "method", "level", "elements", "dofs",
            "min_h", "eta", "eta_ratio", "l2_error", "h1_error",
-           "iterations", "wall_seconds", "delta_l2_previous", "delta_h1_previous", "min_gap", "min_multiplier",
+           "iterations", "pdas_rel_tol", "pdas_eta_ratio", "pdas_eta_history", "pdas_stop_reason",
+           "active_set_stable", "pdas_rejected_indicator_steps", "wall_seconds", "delta_l2_previous", "delta_h1_previous", "min_gap", "min_multiplier",
            "max_complementarity", "free_equation_residual",
            "min_active_multiplier", "marked", "stop_reason")
 
 
 def run_series(degree, method, solver, error_function=None, benchmark="sine_dirac",
-               max_levels=8, max_dofs=5000, rel_tol=1e-3, maxiter=2000,
+               max_levels=8, max_dofs=5000, maxiter=2000,
                output_dir=None):
     """Run identical mesh/refinement bookkeeping for a benchmark-specific solver.
 
@@ -35,7 +38,7 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
     """
     if degree not in (1, 2) or method not in ("uniform", "adaptive"):
         raise ValueError("Select P1/P2 and uniform/adaptive")
-    if not (0 < rel_tol < 1) or max_levels < 0 or max_dofs < 39:
+    if max_levels < 0 or max_dofs < degree * 20 - 1:
         raise ValueError("Invalid study limits")
     if maxiter < 1:
         raise ValueError("maxiter must be positive")
@@ -70,15 +73,25 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
             raise RuntimeError("Nonfinite estimator")
         if initial_eta is None:
             initial_eta = eta
+        # Retain this column for comparison with the archived CSVs.
         ratio = eta / initial_eta if initial_eta > 0 else 0.0
         l2, h1 = (error_function(result) if error_function is not None
                   else (None, None))
         info = result["info"]
+        pdas_eta_ratio = info.get("pdas_eta_ratio")
         new_row = dict(benchmark=benchmark, degree=degree, method=method,
                        level=level, elements=len(nodes)-1, dofs=n_dofs,
                        min_h=float(np.min(np.diff(nodes))), eta=eta,
                        eta_ratio=ratio, l2_error=l2, h1_error=h1,
                        iterations=int(info["iterations"]),
+                       pdas_rel_tol=info.get("pdas_rel_tol"),
+                       pdas_eta_ratio=pdas_eta_ratio,
+                       pdas_eta_history=json.dumps(info.get("pdas_eta_history", [])),
+                       pdas_stop_reason=info["pdas_stop_reason"],
+                       active_set_stable=info["active_set_stable"],
+                       pdas_rejected_indicator_steps=json.dumps(
+                           info["pdas_rejected_indicator_steps"]
+                       ),
                        wall_seconds=elapsed_wall,
                        delta_l2_previous=info.get("delta_l2_previous", ""),
                        delta_h1_previous=info.get("delta_h1_previous", ""),
@@ -90,9 +103,7 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
                        marked=0, stop_reason="")
         rows.append(new_row)
         reason = None
-        if method == "adaptive" and ratio <= rel_tol:
-            reason = "relative_estimator"
-        elif level == max_levels:
+        if level == max_levels:
             reason = "max_levels"
         else:
             if method == "adaptive":
@@ -114,9 +125,10 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
         if reason is not None:
             new_row["stop_reason"] = reason
         print(f"{benchmark} P{degree} {method:8s} level={level:2d} "
-              f"DOFs={n_dofs:5d} eta/eta0={ratio:.3e} "
+              f"DOFs={n_dofs:5d} eta={eta:.3e} "
               f"H1={h1 if h1 is not None else 'n/a'} "
-              f"PDAS={info['iterations']:3d} "
+              f"PDAS={info['iterations']:3d} ({info['pdas_stop_reason']}) "
+              f"inner_ratio={pdas_eta_ratio if pdas_eta_ratio is not None else 'n/a'} "
               f"deltaH1={info.get('delta_h1_previous', float('nan')):.3e} "
               f"free_res={info.get('max_free_stationarity_residual', float('nan')):.2e} "
               f"stop={reason or '-'}", flush=True)
@@ -133,10 +145,13 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
     return rows
 
 
-def _sine_solver(nodes, degree, maxiter, initial_solution, initial_multiplier):
-    return solve_on_mesh(nodes, degree, epsilon=1.0, maxiter=maxiter,
-                         initial_solution=initial_solution,
-                         initial_multiplier=initial_multiplier)
+def _sine_solver(nodes, degree, maxiter, initial_solution, initial_multiplier,
+                 *, pdas_rel_tol=None):
+    return solve_on_mesh(
+        nodes, degree, epsilon=1.0, maxiter=maxiter,
+        initial_solution=initial_solution, initial_multiplier=initial_multiplier,
+        measure_pdas=True, pdas_rel_tol=pdas_rel_tol,
+    )
 
 
 def main():
@@ -145,13 +160,16 @@ def main():
     parser.add_argument("--method", choices=("uniform", "adaptive"), required=True)
     parser.add_argument("--max-levels", type=int, default=8)
     parser.add_argument("--max-dofs", type=int, default=5000)
-    parser.add_argument("--rel-tol", type=float, default=1e-3)
+    parser.add_argument("--pdas-rel-tol", type=float,
+                        help="Request an experimental stop using the same-mesh indicator ratio")
+    parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--maxiter", type=int, default=2000)
     args = parser.parse_args()
-    run_series(degree=args.degree, method=args.method, solver=_sine_solver,
+    run_series(degree=args.degree, method=args.method,
+               solver=partial(_sine_solver, pdas_rel_tol=args.pdas_rel_tol),
                error_function=compute_errors,
                max_levels=args.max_levels, max_dofs=args.max_dofs,
-               rel_tol=args.rel_tol, maxiter=args.maxiter)
+               maxiter=args.maxiter, output_dir=args.output_dir)
 
 
 if __name__ == "__main__":

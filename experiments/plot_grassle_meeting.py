@@ -4,6 +4,7 @@ Input: results/sine_dirac_p{1,2}_{uniform,adaptive}.csv,
        results/no_exact_p{1,2}_{uniform,adaptive}.csv and final .npz files.
 This script NEVER solves the PDE or modifies existing CSV data.
 """
+import argparse
 import csv
 from pathlib import Path
 import numpy as np
@@ -76,10 +77,9 @@ def sine_error_plots():
 
 def sine_indicator_plots():
     fig,ax=plt.subplots(figsize=(7.5,5.1),constrained_layout=True)
-    curves(ax,'sine_dirac','eta_ratio',False)
-    ax.axhline(1e-3,ls=':',color='black',lw=1.2,label=r'target $10^{-3}$')
-    decorate(ax,r'$\eta_h/\eta_0$')
-    ax.set_title('Sine-Dirac: relative residual indicator (not true error)')
+    curves(ax,'sine_dirac','eta',False)
+    decorate(ax,r'$\eta_\ell$')
+    ax.set_title('Sine-Dirac: residual indicator (not true error)')
     dest=FIGURES/'grassle_sine_dirac_estimator.png'
     fig.savefig(dest,dpi=210)
     plt.close(fig)
@@ -95,10 +95,9 @@ def eval_on_grid(nodes,U,degree,x):
 
 def no_exact_plots():
     fig,(a,b)=plt.subplots(1,2,figsize=(13.5,5),constrained_layout=True)
-    curves(a,'no_exact','eta_ratio',True)
-    a.axhline(1e-3,ls=':',color='black',lw=1.2,label=r'target $10^{-3}$')
-    a.set_title('Relative residual indicator (no exact solution)')
-    decorate(a,r'$\eta_h/\eta_0$')
+    curves(a,'no_exact','eta',True)
+    a.set_title('Residual indicator (no exact solution)')
+    decorate(a,r'$\eta_\ell$')
     xx=np.linspace(0.,1.,1000)
     for degree,color in ((1,'#1d3557'),(2,'#9e2a2b')):
         p=RESULTS/f'no_exact_p{degree}_adaptive_final.npz'
@@ -147,7 +146,12 @@ def no_exact_nested_plot():
 
 
 if __name__=='__main__':
-    FIGURES.mkdir(exist_ok=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--results-dir", type=Path, default=RESULTS)
+    parser.add_argument("--figures-dir", type=Path, default=FIGURES)
+    args = parser.parse_args()
+    RESULTS, FIGURES = args.results_dir, args.figures_dir
+    FIGURES.mkdir(parents=True, exist_ok=True)
     sine_error_plots()
     sine_indicator_plots()
     no_exact_plots()
