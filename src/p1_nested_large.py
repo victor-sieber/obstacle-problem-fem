@@ -260,3 +260,113 @@ def solve_pdas_p1(
         f"PDAS failed to stabilize in {maxiter} iterations "
         f"(DOFs={n}, last changed={changed})"
     )
+
+def _p1_gap_load(lower, diagonal, upper, F):
+    """RHS for g=u+1 with g(0)=g(1)=1 and contact g=0.
+
+    Avoid forming A @ (-ones): its interior cancellation becomes
+    inaccurate on meshes with tiny elements.
+    """
+    n = len(diagonal)
+    rhs = np.array(F, dtype=float, copy=True)
+    if n == 1:
+        rhs[0] += diagonal[0]
+    elif n >= 2:
+        rhs[0] += diagonal[0] + upper[0]
+        rhs[-1] += diagonal[-1] + lower[-1]
+    return rhs
+
+
+def solve_pdas_p1_gap(
+    nodes,
+    lower,
+    diagonal,
+    upper,
+    F,
+    initial_solution=None,
+    initial_multiplier=None,
+    c=1.0,
+    maxiter=50,
+    verbose=False,
+):
+    """PDAS in the obstacle gap g=u+1, with the same KKT conditions.
+
+    Contact is exactly g=0. In particular, testing g<0 avoids computing
+    u-(-1) after a solve in which u and the obstacle nearly coincide.
+
+    Return the usual physical interior coefficients u=g-1, and return
+    the KKT multiplier in info["dual_coefficients"].
+    """
+    if c <= 0 or maxiter < 1:
+        raise ValueError("Invalid PDAS parameters")
+
+    n = len(diagonal)
+    rhs = _p1_gap_load(lower, diagonal, upper, F)
+
+    if initial_solution is None:
+        unconstrained_gap = thomas(lower, diagonal, upper, rhs)
+        active = unconstrained_gap <= 0.0
+    else:
+        V0 = np.asarray(initial_solution, dtype=float)
+        if V0.shape != (n,):
+            raise ValueError("Incorrect initial solution")
+        gap0 = V0 + 1.0
+        if initial_multiplier is None:
+            Lambda0 = matvec(lower, diagonal, upper, gap0) - rhs
+        else:
+            Lambda0 = np.asarray(initial_multiplier, dtype=float)
+            if Lambda0.shape != (n,):
+                raise ValueError("Incorrect initial multiplier")
+        active = Lambda0 - c * gap0 > 0.0
+
+    for iteration in range(1, maxiter + 1):
+        free = ~active
+        gap = np.zeros(n, dtype=float)
+
+        starts = np.flatnonzero(free & ~np.r_[False, free[:-1]])
+        ends = np.flatnonzero(free & ~np.r_[free[1:], False]) + 1
+
+        for first, last in zip(starts, ends):
+            gap[first:last] = thomas(
+                lower[first:last],
+                diagonal[first:last],
+                upper[first:last],
+                rhs[first:last],
+            )
+
+        multiplier = matvec(lower, diagonal, upper, gap) - rhs
+        new_active = np.empty_like(active)
+        new_active[active] = multiplier[active] > 0.0
+        new_active[free] = gap[free] < 0.0
+        changed = int(np.count_nonzero(new_active != active))
+
+        if verbose:
+            print(
+                f"PDAS {iteration}: changed={changed}, "
+                f"active={np.count_nonzero(new_active)}",
+                flush=True,
+            )
+        if changed == 0:
+            return gap - 1.0, {
+                "iterations": iteration,
+                "active_dofs": int(np.count_nonzero(active)),
+                "min_gap": float(np.min(gap)),
+                "min_multiplier": float(np.min(multiplier)),
+                "max_complementarity": float(
+                    np.max(np.abs(gap * multiplier))
+                ),
+                "dual_coefficients": multiplier,
+                "gap_coefficients": gap.copy(),
+                "max_free_stationarity_residual": float(
+                    np.max(np.abs(multiplier[free])) if np.any(free) else 0.0
+                ),
+                "min_active_multiplier": float(
+                    np.min(multiplier[active]) if np.any(active) else 0.0
+                ),
+            }
+        active = new_active
+
+    raise RuntimeError(
+        f"PDAS failed to stabilize in {maxiter} iterations "
+        f"(DOFs={n}, last changed={changed})"
+    )

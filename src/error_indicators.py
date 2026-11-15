@@ -117,6 +117,7 @@ def reconstruct_p1_multiplier_l2(
     A,
     F,
     method="consistent",
+    Lambda_override=None,
 ):
     """
     Reconstruct an L2 finite-element representative
@@ -197,10 +198,13 @@ def reconstruct_p1_multiplier_l2(
     #
     # Lambda = A U - F.
     # ---------------------------------------------
-    Au = A(U) if callable(A) else A @ U
-    Lambda = np.asarray(Au, dtype=float) - F
-    if Lambda.shape != (n_interior,):
-        raise ValueError("Invalid stiffness action shape")
+    if Lambda_override is None:
+        Au = A(U) if callable(A) else A @ U
+        Lambda = np.asarray(Au, dtype=float) - F
+    else:
+        Lambda = np.asarray(Lambda_override, dtype=float)
+    if Lambda.shape != (n_interior,) or not np.all(np.isfinite(Lambda)):
+        raise ValueError("Invalid discrete multiplier")
 
     # ---------------------------------------------
     # L2 Riesz map on V_h.
@@ -339,6 +343,8 @@ def compute_p1_residual_indicator(
     regular_load,
     multiplier_method="consistent",
     quadrature_order=4,
+    Lambda_override=None,
+    slopes_override=None,
 ):
     r"""
     Compute the P1 residual indicator
@@ -400,6 +406,7 @@ def compute_p1_residual_indicator(
         A,
         F,
         method=multiplier_method,
+        Lambda_override=Lambda_override,
     )
 
     mu = multiplier["mu"]
@@ -424,10 +431,12 @@ def compute_p1_residual_indicator(
 
     # Since u_h is P1,
     # u_h' is constant on each element.
-    slopes = (
-        np.diff(U_full)
-        / h
-    )
+    if slopes_override is None:
+        slopes = np.diff(U_full) / h
+    else:
+        slopes = np.asarray(slopes_override, dtype=float)
+        if slopes.shape != (n_elements,) or not np.all(np.isfinite(slopes)):
+            raise ValueError("Invalid stable P1 slopes")
 
     jumps = np.zeros(
         len(nodes),
@@ -584,6 +593,7 @@ def reconstruct_p2_multiplier_l2(
     U,
     A,
     F,
+    Lambda_override=None,
 ):
     """
     Construct the P2 L2-Riesz representative of the
@@ -640,10 +650,13 @@ def reconstruct_p2_multiplier_l2(
         )
 
     # Discrete multiplier functional.
-    Au = A(U) if callable(A) else A @ U
-    Lambda = np.asarray(Au, dtype=float) - F
-    if Lambda.shape != (n_interior,):
-        raise ValueError("Invalid stiffness action shape")
+    if Lambda_override is None:
+        Au = A(U) if callable(A) else A @ U
+        Lambda = np.asarray(Au, dtype=float) - F
+    else:
+        Lambda = np.asarray(Lambda_override, dtype=float)
+    if Lambda.shape != (n_interior,) or not np.all(np.isfinite(Lambda)):
+        raise ValueError("Invalid discrete multiplier")
 
     # Matrix-free L2-Riesz reconstruction.
     M = None
@@ -663,6 +676,8 @@ def compute_p2_residual_indicator(
     F,
     regular_load,
     quadrature_order=4,
+    Lambda_override=None,
+    derivatives_override=None,
 ):
     r"""
     Compute
@@ -718,6 +733,7 @@ def compute_p2_residual_indicator(
         U,
         A,
         F,
+        Lambda_override=Lambda_override,
     )
 
     mu = multiplier[
@@ -825,6 +841,21 @@ def compute_p2_residual_indicator(
             dphi_right_reference
             @ local_values
         ) / h_K
+
+    if derivatives_override is not None:
+        try:
+            left, right, second = derivatives_override
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Provide P2 left, right and second derivatives") from exc
+        left = np.asarray(left, dtype=float)
+        right = np.asarray(right, dtype=float)
+        second = np.asarray(second, dtype=float)
+        if any(a.shape != (n_elements,) or not np.all(np.isfinite(a))
+               for a in (left, right, second)):
+            raise ValueError("Invalid stable P2 derivatives")
+        derivative_left = left
+        derivative_right = right
+        second_derivatives = second
 
     # =================================================
     # 3. Interface derivative jumps

@@ -426,3 +426,153 @@ def solve_pdas_p2(
         f"{maxiter} iterations "
         f"(DOFs={n}, last changed={changed})"
     )
+
+def _p2_gap_load(nodes, Fv, Fm):
+    """RHS for g=u+1 with boundary values g(0)=g(1)=1.
+
+    The shifts are only the boundary couplings of the P2 stiffness
+    matrix; computing A @ (-ones) would lose accuracy on graded meshes.
+    """
+    h = np.diff(nodes)
+    fv = np.array(Fv, dtype=float, copy=True)
+    fm = np.array(Fm, dtype=float, copy=True)
+    fm[0] += 8.0 / (3.0 * h[0])
+    fm[-1] += 8.0 / (3.0 * h[-1])
+    fv[1] -= 1.0 / (3.0 * h[0])
+    fv[-2] -= 1.0 / (3.0 * h[-1])
+    return fv, fm
+
+
+def solve_gap_p2_on_active_set(nodes, Fv_gap, Fm_gap, active):
+    """Solve the P2 free equations directly in the gap g=u+1.
+
+    The prescribed boundary gap is already encoded in Fv_gap/Fm_gap.
+    Contact nodes are exactly zero; free midpoints are condensed.
+    """
+    M = len(nodes) - 1
+    if active.shape != (2 * M - 1,):
+        raise ValueError("Incorrect active-set shape")
+
+    active_m = active[0::2]
+    active_v = np.zeros(M + 1, dtype=bool)
+    active_v[1:-1] = active[1::2]
+    free_m = ~active_m
+
+    h = np.diff(nodes)
+    a = 7.0 / (3.0 * h)
+    b = -8.0 / (3.0 * h)
+    cc = 1.0 / (3.0 * h)
+    d = 16.0 / (3.0 * h)
+    correction = b * b / d
+
+    dv_local = a - free_m * correction
+    off = cc - free_m * correction
+    diagonal_vertices = np.zeros(M + 1)
+    diagonal_vertices[:-1] += dv_local
+    diagonal_vertices[1:] += dv_local
+
+    shift = np.where(free_m, -b / d * Fm_gap, 0.0)
+    rhs_vertices = Fv_gap.copy()
+    rhs_vertices[:-1] += shift
+    rhs_vertices[1:] += shift
+
+    free_v = ~active_v[1:-1]
+    main = diagonal_vertices[1:-1].copy()
+    rhs = rhs_vertices[1:-1].copy()
+    main[~free_v] = 1.0
+    rhs[~free_v] = 0.0
+
+    coupling = off[1:-1] * (free_v[:-1] & free_v[1:])
+    lower = np.zeros(M - 1)
+    upper = np.zeros(M - 1)
+    lower[1:] = coupling
+    upper[:-1] = coupling
+
+    vertices = np.zeros(M + 1)
+    vertices[1:-1] = thomas(lower, main, upper, rhs)
+
+    midpoints = np.zeros(M)
+    midpoints[free_m] = (
+        Fm_gap[free_m]
+        - b[free_m] * (
+            vertices[:-1][free_m] + vertices[1:][free_m]
+        )
+    ) / d[free_m]
+
+    return join_p2(vertices, midpoints)
+
+
+def solve_pdas_p2_gap(
+    nodes,
+    Fv,
+    Fm,
+    initial_solution=None,
+    initial_multiplier=None,
+    c=1.0,
+    maxiter=100,
+    verbose=False,
+):
+    """PDAS in the obstacle gap g=u+1 with static condensation."""
+    M = len(nodes) - 1
+    n = 2 * M - 1
+    if c <= 0 or maxiter < 1:
+        raise ValueError("Invalid PDAS parameters")
+
+    Fv_gap, Fm_gap = _p2_gap_load(nodes, Fv, Fm)
+    rhs = join_p2(Fv_gap, Fm_gap)
+
+    if initial_solution is None:
+        unconstrained_gap = solve_gap_p2_on_active_set(
+            nodes, Fv_gap, Fm_gap, np.zeros(n, dtype=bool)
+        )
+        active = unconstrained_gap <= 0.0
+    else:
+        initial = np.asarray(initial_solution, dtype=float)
+        if initial.shape != (n,):
+            raise ValueError("Incorrect initial solution")
+        gap0 = initial + 1.0
+        if initial_multiplier is None:
+            lam0 = p2_matvec(nodes, gap0) - rhs
+        else:
+            lam0 = np.asarray(initial_multiplier, dtype=float)
+            if lam0.shape != (n,):
+                raise ValueError("Incorrect initial multiplier")
+        active = lam0 - c * gap0 > 0.0
+
+    for iteration in range(1, maxiter + 1):
+        gap = solve_gap_p2_on_active_set(nodes, Fv_gap, Fm_gap, active)
+        lam = p2_matvec(nodes, gap) - rhs
+
+        new_active = np.empty_like(active)
+        new_active[active] = lam[active] > 0.0
+        new_active[~active] = gap[~active] < 0.0
+        changed = int(np.count_nonzero(new_active != active))
+
+        if verbose:
+            print(
+                f"PDAS {iteration}: changed={changed}, "
+                f"active={np.count_nonzero(new_active)}",
+                flush=True,
+            )
+        if changed == 0:
+            return gap - 1.0, {
+                "iterations": iteration,
+                "active_dofs": int(np.count_nonzero(active)),
+                "min_gap": float(np.min(gap)),
+                "min_multiplier": float(np.min(lam)),
+                "max_complementarity": float(np.max(np.abs(gap * lam))),
+                "dual_coefficients": lam,
+                "gap_coefficients": gap.copy(),
+                "max_free_stationarity_residual": float(
+                    np.max(np.abs(lam[~active])) if np.any(~active) else 0.0
+                ),
+                "min_active_multiplier": float(
+                    np.min(lam[active]) if np.any(active) else 0.0
+                ),
+            }
+        active = new_active
+
+    raise RuntimeError(
+        f"P2 PDAS failed to stabilize in {maxiter} iterations "
+        f"(DOFs={n}, last changed={changed})"
+    )
