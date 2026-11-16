@@ -31,7 +31,7 @@ COLUMNS = ("benchmark", "degree", "method", "level", "elements", "dofs",
 
 def run_series(degree, method, solver, error_function=None, benchmark="sine_dirac",
                max_levels=8, max_dofs=5000, maxiter=2000,
-               output_dir=None, mesh_rel_tol=None):
+               output_dir=None, mesh_rel_tol=None, min_element_size=None):
     """Run identical mesh/refinement bookkeeping for a benchmark-specific solver.
 
     solver(nodes, degree, maxiter, initial_solution, initial_multiplier)
@@ -46,6 +46,9 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
 
     if mesh_rel_tol is not None and not 0.0 < mesh_rel_tol < 1.0:
         raise ValueError("mesh_rel_tol must be between zero and one")
+
+    if min_element_size is not None and min_element_size <= 0:
+        raise ValueError("min_element_size must be positive")
 
     nodes = np.linspace(0, 1, 21)  # original 20-element initial mesh
     previous = None
@@ -124,7 +127,12 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
             else:
                 candidate = bisect_marked_elements(nodes, marked)
                 candidate_dofs = degree * (len(candidate)-1) - 1
-                if candidate_dofs > max_dofs:
+                candidate_h = np.diff(candidate)
+                if np.any(candidate_h <= 0):
+                    reason = "mesh_resolution"
+                elif min_element_size is not None and np.min(candidate_h) < min_element_size:
+                    reason = "mesh_resolution"
+                elif candidate_dofs > max_dofs:
                     reason = "dof_cap"
                 else:
                     new_row["marked"] = count
