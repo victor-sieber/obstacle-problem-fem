@@ -2,7 +2,7 @@
 
 Sine benchmark: epsilon=1, original Dirac point loads and exact solution.
 Adaptive: maximum marking theta=0.5. Uniform: bisect all elements.
-The PDAS indicator tolerance is within each mesh. Mesh budgets are separate.
+Inner PDAS and outer mesh indicator tolerances have separate meanings.
 """
 import argparse
 import csv
@@ -21,16 +21,17 @@ from experiments.key.sine_dirac.problem import (solve_on_mesh, compute_errors)
 
 ROOT = Path(__file__).resolve().parents[3]
 COLUMNS = ("benchmark", "degree", "method", "level", "elements", "dofs",
-           "min_h", "eta", "eta_ratio", "l2_error", "h1_error",
+           "min_h", "eta", "eta_ratio", "mesh_rel_tol", "l2_error", "h1_error",
            "iterations", "pdas_rel_tol", "pdas_eta_ratio", "pdas_eta_history", "pdas_stop_reason",
            "active_set_stable", "pdas_rejected_indicator_steps", "wall_seconds", "delta_l2_previous", "delta_h1_previous", "min_gap", "min_multiplier",
            "max_complementarity", "free_equation_residual",
-           "min_active_multiplier", "marked", "stop_reason")
+           "min_active_multiplier", "scaled_free_residual", "min_element_gap",
+           "marked", "stop_reason")
 
 
 def run_series(degree, method, solver, error_function=None, benchmark="sine_dirac",
                max_levels=8, max_dofs=5000, maxiter=2000,
-               output_dir=None):
+               output_dir=None, mesh_rel_tol=None):
     """Run identical mesh/refinement bookkeeping for a benchmark-specific solver.
 
     solver(nodes, degree, maxiter, initial_solution, initial_multiplier)
@@ -42,6 +43,9 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
         raise ValueError("Invalid study limits")
     if maxiter < 1:
         raise ValueError("maxiter must be positive")
+
+    if mesh_rel_tol is not None and not 0.0 < mesh_rel_tol < 1.0:
+        raise ValueError("mesh_rel_tol must be between zero and one")
 
     nodes = np.linspace(0, 1, 21)  # original 20-element initial mesh
     previous = None
@@ -82,7 +86,7 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
         new_row = dict(benchmark=benchmark, degree=degree, method=method,
                        level=level, elements=len(nodes)-1, dofs=n_dofs,
                        min_h=float(np.min(np.diff(nodes))), eta=eta,
-                       eta_ratio=ratio, l2_error=l2, h1_error=h1,
+                       eta_ratio=ratio, mesh_rel_tol=mesh_rel_tol, l2_error=l2, h1_error=h1,
                        iterations=int(info["iterations"]),
                        pdas_rel_tol=info.get("pdas_rel_tol"),
                        pdas_eta_ratio=pdas_eta_ratio,
@@ -100,10 +104,14 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
                        max_complementarity=float(info["max_complementarity_physical"]),
                        free_equation_residual=info.get("max_free_stationarity_residual", ""),
                        min_active_multiplier=info.get("min_active_multiplier", ""),
+                       scaled_free_residual=info.get("scaled_free_residual", ""),
+                       min_element_gap=info.get("min_element_gap", ""),
                        marked=0, stop_reason="")
         rows.append(new_row)
         reason = None
-        if level == max_levels:
+        if mesh_rel_tol is not None and ratio <= mesh_rel_tol:
+            reason = "relative_estimator"
+        elif level == max_levels:
             reason = "max_levels"
         else:
             if method == "adaptive":
@@ -136,7 +144,7 @@ def run_series(degree, method, solver, error_function=None, benchmark="sine_dira
             writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator="\n")
             writer.writeheader()
             writer.writerows(rows)
-        if benchmark == "no_exact" and method == "adaptive":
+        if method == "adaptive":
             np.savez(folder / f"{benchmark}_p{degree}_{method}_final.npz",
                      nodes=result["nodes"], U=result["U"], Lambda=result["Lambda"])
         if reason is not None:
@@ -160,6 +168,8 @@ def main():
     parser.add_argument("--method", choices=("uniform", "adaptive"), required=True)
     parser.add_argument("--max-levels", type=int, default=8)
     parser.add_argument("--max-dofs", type=int, default=5000)
+    parser.add_argument("--mesh-rel-tol", type=float,
+                        help="Outer mesh target eta_l / eta_0; omit for fixed budgets")
     parser.add_argument("--pdas-rel-tol", type=float,
                         help="Request an experimental stop using the same-mesh indicator ratio")
     parser.add_argument("--output-dir", type=Path)
@@ -169,7 +179,8 @@ def main():
                solver=partial(_sine_solver, pdas_rel_tol=args.pdas_rel_tol),
                error_function=compute_errors,
                max_levels=args.max_levels, max_dofs=args.max_dofs,
-               maxiter=args.maxiter, output_dir=args.output_dir)
+               maxiter=args.maxiter, output_dir=args.output_dir,
+               mesh_rel_tol=args.mesh_rel_tol)
 
 
 if __name__ == "__main__":

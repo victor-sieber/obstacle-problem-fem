@@ -57,7 +57,7 @@ def _intermesh_difference(nodes, degree, gap, previous_on_new):
 
 def solve_on_mesh(nodes, degree, maxiter=2000,
                   initial_solution=None, initial_multiplier=None,
-                  *, measure_pdas=False, pdas_rel_tol=None):
+                  *, measure_pdas=False, pdas_rel_tol=None, load=regular_load):
     nodes = np.asarray(nodes, dtype=float)
     if (nodes.ndim != 1 or len(nodes) < 3 or not np.all(np.isfinite(nodes))
             or np.any(np.diff(nodes) <= 0)):
@@ -65,11 +65,11 @@ def solve_on_mesh(nodes, degree, maxiter=2000,
 
     if degree == 1:
         low, diag, up, _ = assemble_p1_dirac(nodes)  # stiffness only!
-        F = load_p1(nodes, regular_load, quadrature_order=8)
+        F = load_p1(nodes, load, quadrature_order=8)
         action = lambda x: matvec(low, diag, up, x)
         solve_gap = partial(solve_pdas_p1_gap, nodes, low, diag, up, F)
     elif degree == 2:
-        F = load_p2(nodes, regular_load, quadrature_order=8)
+        F = load_p2(nodes, load, quadrature_order=8)
         M = len(nodes)-1
         Fv = np.zeros(M+1)
         Fv[1:-1] = F[1::2]
@@ -84,11 +84,11 @@ def solve_on_mesh(nodes, degree, maxiter=2000,
         slopes, derivatives = _gap_derivatives(nodes, degree, gap)
         if degree == 1:
             return compute_p1_residual_indicator(
-                nodes, physical, action, F, regular_load,
+                nodes, physical, action, F, load,
                 Lambda_override=multiplier, slopes_override=slopes,
             )
         return compute_p2_residual_indicator(
-            nodes, physical, action, F, regular_load,
+            nodes, physical, action, F, load,
             Lambda_override=multiplier, derivatives_override=derivatives,
         )
 
@@ -135,13 +135,15 @@ def main():
     parser.add_argument("--method",choices=("uniform","adaptive"),required=True)
     parser.add_argument("--max-levels",type=int,default=12)
     parser.add_argument("--max-dofs",type=int,default=20000)
+    parser.add_argument("--mesh-rel-tol", type=float)
     parser.add_argument("--pdas-rel-tol", type=float)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--maxiter",type=int,default=2000)
     a=parser.parse_args()
     rows=run_series(degree=a.degree,method=a.method,solver=partial(_solve, pdas_rel_tol=a.pdas_rel_tol),
                     benchmark="no_exact",max_levels=a.max_levels,
-                    max_dofs=a.max_dofs, maxiter=a.maxiter, output_dir=a.output_dir)
+                    max_dofs=a.max_dofs, maxiter=a.maxiter, output_dir=a.output_dir,
+                    mesh_rel_tol=a.mesh_rel_tol)
     print(f"Final residual indicator: {rows[-1]['eta']:.6e}")
 
 
