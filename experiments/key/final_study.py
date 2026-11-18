@@ -1,7 +1,8 @@
-"""Reproducible final study. Run from the repository root with python -m.
+"""Archived pre-inner-tolerance study and comparison utilities.
 
-Writes final-study topic folders and results/validation/stopping.
-All methods use the existing indicator and maximum marking theta=0.5.
+Its historic run_study/plot/tables functions used a mesh-level stopping
+tolerance. They are retained for provenance ONLY, never for final figures.
+The canonical final protocol and verified plots live in inner_study.py.
 """
 import argparse
 import csv
@@ -229,9 +230,42 @@ def reference_errors(case, result):
     xx = (cuts[:-1,None]+cuts[1:,None])/2 + np.diff(cuts)[:,None]*q/2
     ww = np.diff(cuts)[:,None]*weights/2
     true, deriv = exact(xx.ravel())
-    value = module.evaluate_fem_solution(nodes, u, xx.ravel())
-    slope = module.evaluate_fem_derivative(nodes, u, xx.ravel())
-    return (float(np.sqrt(np.sum(ww.ravel()*(true-value)**2))),
+    # The obstacle is the constant -1 for the regular-load benchmarks.
+    # Differentiate the computed gap g_h=u_h+1, not the reconstructed
+    # physical values u_h near -1. On strongly graded P2 meshes the
+    # latter loses significant digits before division by h.
+    gap = result.get('gap_coefficients')
+    if gap is None:
+        # Historical callers containing only physical coefficients.
+        # The final convergence runs always supply gap_coefficients.
+        value = module.evaluate_fem_solution(nodes, u, xx.ravel())
+        slope = module.evaluate_fem_derivative(nodes, u, xx.ravel())
+        difference = true - value
+    else:
+        full = np.r_[1.0, np.asarray(gap, dtype=float), 1.0]
+        x = xx.ravel()
+        element = np.clip(np.searchsorted(nodes, x, side='right') - 1,
+                          0, len(nodes) - 2)
+        h = nodes[element + 1] - nodes[element]
+        xi = (x - nodes[element]) / h
+        if p == 1:
+            left, right = full[element], full[element + 1]
+            gap_value = (1.0 - xi)*left + xi*right
+            slope = (right - left) / h
+        else:
+            left = full[2*element]
+            middle = full[2*element + 1]
+            right = full[2*element + 2]
+            gap_value = (2.0*(xi-0.5)*(xi-1.0)*left
+                         + 4.0*xi*(1.0-xi)*middle
+                         + 2.0*xi*(xi-0.5)*right)
+            # Centre slope plus curvature contribution, evaluated from
+            # coefficient differences. This cancels the constant -1
+            # analytically and avoids O(machine_eps / h) noise.
+            slope = ((right - left)
+                     + 4.0*((left-middle) + (right-middle))*(xi-0.5)) / h
+        difference = (true + 1.0) - gap_value
+    return (float(np.sqrt(np.sum(ww.ravel()*difference**2))),
             float(np.sqrt(np.sum(ww.ravel()*(deriv-slope)**2))))
 
 
@@ -372,9 +406,11 @@ def main():
     parser.add_argument('action',choices=('run','inner','warm','reference','scaling','plot','tables'))
     args=parser.parse_args()
     OUT.mkdir(parents=True,exist_ok=True)
-    if args.action=='run': run_study()
-    elif args.action=='inner': run_study(inner=1e-3); inner_audit()
-    elif args.action=='warm': warm_starts()
+    if args.action in ('run', 'inner', 'plot', 'tables'):
+        parser.error('Archived outer-tolerance study: do not generate new final data here. '
+                     'Use python -m experiments.key.inner_study {run|verify|plot} '
+                     '--max-dofs 300000 --inner-tol 1e-3 --min-h 1e-12')
+    if args.action=='warm': warm_starts()
     elif args.action=='reference': reference_checks()
     elif args.action=='scaling': scaling()
     elif args.action=='tables': tables()

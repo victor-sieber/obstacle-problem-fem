@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from scipy.linalg import solve
 from src import fem, fem_p2
-from src.p1_nested_large import thomas, assemble_p1_dirac
+from src.p1_nested_large import thomas, assemble_p1_dirac, _solve_p1_gap_high_precision, _p1_gap_load
 from src.p2_nested_large import solve_gap_p2_on_active_set, split_p2, _p2_gap_load
 from src.multiplier_l2_transfer import p1_riesz_coefficients, p2_riesz_coefficients
 from src.pdas_indicator import PDASIndicator, passes_nodal_kkt
@@ -80,7 +80,37 @@ def main():
         assert np.allclose(exact(np.array([0.,1.]))[0],0,atol=1e-12)
         assert np.allclose(exact(np.asarray(breaks))[0],-1,atol=1e-12)
         assert np.allclose(exact(np.asarray(breaks))[1],0,atol=1e-12)
-    print('PASS: independent assembly, P2 condensation, mass solves, Thomas, outer stopping, inner reset/guard, reference boundaries.')
+    # Independent graded-mesh regression: P2 FEM exactly represents a
+    # quadratic Poisson solution even when two nodes are 1e-9 apart.
+    # Previously the binary64 condensed Thomas solve lost ~5e-8 here.
+    tiny_nodes = np.sort(np.unique(np.r_[
+        np.linspace(0, 1, 21), .426, .426000001, .426000002, .42600002,
+    ]))
+    ne = len(tiny_nodes) - 1
+    load = fem_p2.assemble_load_vector(
+        tiny_nodes, lambda x: np.ones_like(x), quadrature_order=3)
+    load_v = np.zeros(ne + 1)
+    load_v[1:-1] = load[1::2]
+    fv_gap, fm_gap = _p2_gap_load(tiny_nodes, load_v, load[0::2])
+    computed = solve_gap_p2_on_active_set(
+        tiny_nodes, fv_gap, fm_gap, np.zeros(2 * ne - 1, dtype=bool))
+    points = np.empty(2 * ne - 1)
+    points[0::2] = (tiny_nodes[:-1] + tiny_nodes[1:]) / 2
+    points[1::2] = tiny_nodes[1:-1]
+    reference_gap = 1.0 + points * (1.0 - points) / 2.0
+    assert np.max(np.abs(computed - reference_gap)) < 1e-12, \
+        'P2 graded-mesh solve lost accuracy'
+    # Independent P1 graded-mesh regression: a constant RHS gives the exact
+    # nodal values u(x)=x(1-x)/2. Double-precision tridiagonal elimination
+    # loses roughly 4e-8 in this deliberately ill-conditioned mesh.
+    load_p1 = fem.assemble_load_vector(
+        tiny_nodes, lambda x: np.ones_like(x), quadrature_order=3)
+    reference_p1 = 1.0 + tiny_nodes[1:-1] * (1-tiny_nodes[1:-1]) / 2.0
+    computed_p1 = _solve_p1_gap_high_precision(
+        tiny_nodes, load_p1, np.zeros(len(tiny_nodes)-2, dtype=bool))
+    assert np.max(np.abs(computed_p1-reference_p1)) < 1e-12, \
+        'P1 graded-mesh solve lost accuracy'
+    print('PASS: independent assembly, P2 condensation, mass solves, Thomas, outer stopping, inner reset/guard, reference boundaries, graded-mesh P1/P2 accuracy.')
 
 
 if __name__=='__main__':

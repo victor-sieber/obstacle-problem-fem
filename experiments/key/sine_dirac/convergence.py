@@ -182,13 +182,16 @@ def main():
                         help="Request an experimental stop using the same-mesh indicator ratio")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--maxiter", type=int, default=2000)
+    parser.add_argument("--min-h", type=float,
+                        help="Minimum permissible post-refinement element length")
     args = parser.parse_args()
     run_series(degree=args.degree, method=args.method,
                solver=partial(_sine_solver, pdas_rel_tol=args.pdas_rel_tol),
                error_function=compute_errors,
                max_levels=args.max_levels, max_dofs=args.max_dofs,
                maxiter=args.maxiter, output_dir=args.output_dir,
-               mesh_rel_tol=args.mesh_rel_tol)
+               mesh_rel_tol=args.mesh_rel_tol,
+               min_element_size=args.min_h)
 
 
 if __name__ == "__main__":

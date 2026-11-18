@@ -1,4 +1,8 @@
-"""Inner stopping study. Run with python -m experiments.key.inner_study ACTION."""
+"""Canonical final-study protocol: inner PDAS criterion, no outer mesh tolerance.
+
+Run with python -m experiments.key.inner_study ACTION. Older final_study
+outputs used a different stopping policy and must not be mixed with these CSVs.
+"""
 import argparse
 import csv
 import hashlib
@@ -47,6 +51,8 @@ def run_convergence(args):
     summary = []
     for case in args.cases:
         for degree, method in PAIRS:
+            if degree not in args.degrees or method not in args.methods:
+                continue
             errors = compute_errors if case == 'sine_dirac' else partial(reference_errors, case)
             rows = run_series(
                 degree, method, partial(solve, case, inner=args.inner_tol),
@@ -56,7 +62,15 @@ def run_convergence(args):
             for row in rows:
                 row.pop('eta_ratio', None)
                 row.pop('mesh_rel_tol', None)
-            write_rows(folder/case/f'{case}_p{degree}_{method}.csv', rows)
+            name = f'{case}_p{degree}_{method}'
+            write_rows(folder/case/f'{name}.csv', rows)
+            # Per-series metadata stays valid after targeted reruns of other cases.
+            protocol = dict(case=case, degree=degree, method=method,
+                            pdas_rel_tol=args.inner_tol, mesh_rel_tol=None,
+                            max_dofs=args.max_dofs, max_levels=args.max_levels,
+                            min_h=args.min_h)
+            (folder/case/f'{name}.protocol.json').write_text(
+                json.dumps(protocol, indent=2)+'\n')
             last = rows[-1]
             summary.append(dict(
                 case=case, degree=degree, method=method, dofs=last['dofs'],
@@ -67,9 +81,91 @@ def run_convergence(args):
                     r['pdas_stop_reason']=='relative_indicator' and not r['active_set_stable'] for r in rows),
                 min_element_gap=last['min_element_gap'],
                 scaled_free_residual=last['scaled_free_residual']))
-            write_rows(folder/'summary.csv', summary)
-    print('SUMMARY:', folder/'summary.csv', flush=True)
+            # A partial --cases/--degrees/--methods run is not a final summary.
+            write_rows(folder/'run_progress.csv', summary)
+    print('RUN PROGRESS:', folder/'run_progress.csv', flush=True)
 
+
+
+
+def verify(args):
+    """Reject incomplete, legacy, or mismatched result sets before final plots.
+
+    This is a *protocol* audit, not a proof of numerical accuracy. Every
+    curve must still be checked for mesh and floating-point convergence.
+    """
+    folder = OUT / f'budget_{args.max_dofs}'
+    problems = []
+    verified = []
+    for case in args.cases:
+        for degree, method in PAIRS:
+            path = folder / case / f'{case}_p{degree}_{method}.csv'
+            if not path.is_file():
+                problems.append(f'MISSING {path.relative_to(ROOT)}')
+                continue
+            sidecar = path.with_suffix('.protocol.json')
+            if sidecar.exists():
+                config = json.loads(sidecar.read_text())
+                if (config.get('mesh_rel_tol') is not None or
+                    not np.isclose(config.get('pdas_rel_tol', -1), args.inner_tol) or
+                    config.get('max_dofs') != args.max_dofs or
+                    config.get('min_h') < args.min_h*(1 - 1e-10)):
+                    problems.append(f'{case} P{degree} {method}: sidecar protocol disagrees')
+            with path.open(newline='') as stream:
+                rows = list(csv.DictReader(stream))
+            if not rows:
+                problems.append(f'EMPTY {path.relative_to(ROOT)}')
+                continue
+            previous_dofs = -1
+            for level, row in enumerate(rows):
+                where = f'{case} P{degree} {method} level {level}'
+                try:
+                    dofs = int(row['dofs'])
+                    tolerance = float(row['pdas_rel_tol'])
+                    min_h = float(row['min_h'])
+                    eta = float(row['eta'])
+                    float(row['pdas_eta_ratio'])
+                except (ValueError, TypeError, KeyError) as exc:
+                    problems.append(f'{where}: missing/invalid inner PDAS diagnostics ({exc})')
+                    continue
+                if (row.get('benchmark') != case or
+                    row.get('degree') != str(degree) or row.get('method') != method):
+                    problems.append(f'{where}: CSV series identity does not match filename')
+                if not np.isclose(tolerance, args.inner_tol, rtol=1e-12, atol=0):
+                    problems.append(f'{where}: pdas_rel_tol={tolerance}, expected {args.inner_tol}')
+                if row.get('mesh_rel_tol', '') not in ('', 'None'):
+                    problems.append(f'{where}: outer mesh tolerance still enabled')
+                if row.get('stop_reason') == 'relative_estimator':
+                    problems.append(f'{where}: stopped at outer estimator threshold')
+                if min_h < args.min_h * (1 - 1e-10):
+                    problems.append(f'{where}: min_h={min_h:g} below chosen safeguard {args.min_h:g}')
+                if dofs <= previous_dofs or dofs > args.max_dofs:
+                    problems.append(f'{where}: nonincreasing DOFs or DOF cap exceeded')
+                if not np.isfinite(eta):
+                    problems.append(f'{where}: nonfinite estimator')
+                previous_dofs = dofs
+            last = rows[-1]
+            if last['stop_reason'] not in ('dof_cap','mesh_resolution','max_levels','nothing_marked'):
+                problems.append(f'{case} P{degree} {method}: missing/invalid terminal stop: {last["stop_reason"]!r}')
+            verified.append(dict(case=case, degree=degree, method=method,
+                                 dofs=last['dofs'], h1_error=last['h1_error'],
+                                 eta=last['eta'], min_h=last['min_h'],
+                                 mesh_stop=last['stop_reason'], meshes=len(rows),
+                                 inner_relative_exits=sum(r['pdas_stop_reason']=='relative_indicator' for r in rows),
+                                 active_set_exits=sum(r['pdas_stop_reason']=='active_set_stable' for r in rows),
+                                 scaled_free_residual=last['scaled_free_residual']))
+    if problems:
+        (folder/'verified_summary.csv').unlink(missing_ok=True)
+        raise RuntimeError('Final protocol verification FAILED:\n  - ' + '\n  - '.join(problems)
+                           + '\nHistorical or partial CSVs must not be used in final plots. '
+                             'Rerun only the failing series with inner_study run --cases/--degrees/--methods.')
+    write_rows(folder/'verified_summary.csv', verified)
+    print(f'VERIFIED {len(verified)} complete series (inner tolerance {args.inner_tol:g}, '
+          f'outer tolerance OFF, min-h >= {args.min_h:g})', flush=True)
+    for row in verified:
+        print(f"{row['case']:10} P{row['degree']} {row['method']:8} "
+              f"DOFs={int(row['dofs']):7d} stop={row['mesh_stop']}", flush=True)
+    return verified
 
 def audit(args):
     save_config(VALID, args)
@@ -132,6 +228,7 @@ def scaling(args):
 
 
 def plot(args):
+    verify(args)
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -163,12 +260,16 @@ def plot(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('run', 'audit', 'scaling', 'plot'))
+    parser.add_argument('action', choices=('run', 'audit', 'scaling', 'verify', 'plot'))
     parser.add_argument('--max-dofs', type=int, default=300000)
     parser.add_argument('--max-levels', type=int, default=60)
     parser.add_argument('--inner-tol', type=float, default=1e-3)
     parser.add_argument('--min-h', type=float, default=64*np.finfo(float).eps)
     parser.add_argument('--cases', nargs='+', choices=CASES, default=list(CASES))
+    parser.add_argument('--degrees', nargs='+', type=int, choices=(1, 2), default=[1, 2],
+                        help='Run only these polynomial degrees (run action only)')
+    parser.add_argument('--methods', nargs='+', choices=('uniform','adaptive'),
+                        default=['uniform','adaptive'], help='Run only these mesh methods (run action only)')
     parser.add_argument('--elements', nargs='+', type=int, default=[40, 160, 640])
     parser.add_argument('--tolerances', nargs='+', type=float, default=[.001, .1, .5, .9, .99])
     args = parser.parse_args()
@@ -178,7 +279,8 @@ def main():
         parser.error('Relative tolerances must lie between zero and one')
     if any(n < 4 or n%2 for n in args.elements):
         parser.error('Audit element counts must be even and at least four')
-    {'run': run_convergence, 'audit': audit, 'scaling': scaling, 'plot': plot}[args.action](args)
+    {'run': run_convergence, 'audit': audit, 'scaling': scaling,
+     'verify': verify, 'plot': plot}[args.action](args)
 
 
 if __name__ == '__main__':

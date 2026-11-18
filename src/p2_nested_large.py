@@ -445,6 +445,91 @@ def _p2_gap_load(nodes, Fv, Fm):
     return fv, fm
 
 
+def _solve_gap_p2_high_precision(nodes, Fv_gap, Fm_gap, active):
+    """Solve the statically condensed P2 gap system robustly on graded meshes.
+
+    Strong grading makes the tridiagonal elimination susceptible to loss of
+    significant digits in binary64. Decimal arithmetic is used only for the
+    free-set linear solve and works also on Macs where np.longdouble equals
+    binary64. The assembled loads and the returned FE coefficients remain
+    binary64, and the mathematical discrete problem is unchanged.
+    """
+    from decimal import Decimal, localcontext
+
+    M = len(nodes) - 1
+    active_m = active[0::2]
+    active_v = np.zeros(M + 1, dtype=bool)
+    active_v[1:-1] = active[1::2]
+    free_m = ~active_m
+    free_v = ~active_v[1:-1]
+    D = Decimal.from_float
+
+    with localcontext() as context:
+        context.prec = 40
+        h = [D(float(nodes[i + 1] - nodes[i])) for i in range(M)]
+        f_vertex = [D(float(f)) for f in Fv_gap]
+        f_mid = [D(float(f)) for f in Fm_gap]
+
+        # Static condensation: for free midpoints the Schur complement
+        # has exact local diagonal 1/h and off-diagonal -1/h.
+        # For active midpoints it has 7/(3h) and 1/(3h), respectively.
+        diagonal_local = [
+            1 / hi if free_m[i] else Decimal(7) / (3 * hi)
+            for i, hi in enumerate(h)
+        ]
+        off_local = [
+            -1 / hi if free_m[i] else Decimal(1) / (3 * hi)
+            for i, hi in enumerate(h)
+        ]
+        diagonal = [diagonal_local[i - 1] + diagonal_local[i]
+                    for i in range(1, M)]
+        rhs = [
+            f_vertex[i]
+            + (f_mid[i - 1] / 2 if free_m[i - 1] else Decimal(0))
+            + (f_mid[i] / 2 if free_m[i] else Decimal(0))
+            for i in range(1, M)
+        ]
+        for i in range(M - 1):
+            if not free_v[i]:
+                diagonal[i] = Decimal(1)
+                rhs[i] = Decimal(0)
+
+        lower = [Decimal(0)] * (M - 1)
+        upper = [Decimal(0)] * (M - 1)
+        for i in range(M - 2):
+            if free_v[i] and free_v[i + 1]:
+                lower[i + 1] = upper[i] = off_local[i + 1]
+
+        # Thomas elimination in extended precision.
+        c = [Decimal(0)] * (M - 1)
+        d = [Decimal(0)] * (M - 1)
+        pivot = diagonal[0]
+        if pivot <= 0:
+            raise ArithmeticError('Nonpositive P2 free-set pivot')
+        c[0] = upper[0] / pivot
+        d[0] = rhs[0] / pivot
+        for i in range(1, M - 1):
+            pivot = diagonal[i] - lower[i] * c[i - 1]
+            if pivot <= 0:
+                raise ArithmeticError(f'Nonpositive P2 pivot at {i}')
+            c[i] = upper[i] / pivot
+            d[i] = (rhs[i] - lower[i] * d[i - 1]) / pivot
+
+        vertex = [Decimal(0)] * (M + 1)
+        vertex[M - 1] = d[-1]
+        for i in range(M - 3, -1, -1):
+            vertex[i + 1] = d[i] - c[i] * vertex[i + 2]
+
+        # Elimination formula: gm=(gL+gR)/2 + (3h/16) Fm_gap.
+        midpoint = [Decimal(0)] * M
+        for i in range(M):
+            if free_m[i]:
+                midpoint[i] = ((vertex[i] + vertex[i + 1]) / 2
+                               + (3 * h[i] / 16) * f_mid[i])
+        return join_p2(np.array([float(v) for v in vertex]),
+                       np.array([float(m) for m in midpoint]))
+
+
 def solve_gap_p2_on_active_set(nodes, Fv_gap, Fm_gap, active):
     """Solve the P2 free equations directly in the gap g=u+1.
 
@@ -454,6 +539,15 @@ def solve_gap_p2_on_active_set(nodes, Fv_gap, Fm_gap, active):
     M = len(nodes) - 1
     if active.shape != (2 * M - 1,):
         raise ValueError("Incorrect active-set shape")
+
+    # On strongly graded meshes binary64 Thomas elimination can lose
+    # accuracy despite a tiny scaled algebraic residual.
+    sizes = np.diff(nodes)
+    # Extended precision is also needed on large *uniform* meshes: the
+    # large condition number makes the binary64 solve reach an L2 error
+    # floor well before the spatial approximation has saturated.
+    if np.max(sizes) / np.min(sizes) > 1e3 or M >= 15000:
+        return _solve_gap_p2_high_precision(nodes, Fv_gap, Fm_gap, active)
 
     active_m = active[0::2]
     active_v = np.zeros(M + 1, dtype=bool)

@@ -465,78 +465,30 @@ def compute_p1_residual_indicator(
         quadrature_order
     )
 
-    residual_l2_squared = np.zeros(
-        n_elements,
-        dtype=float,
-    )
-
-    volume_eta_squared = np.zeros(
-        n_elements,
-        dtype=float,
-    )
-
-    for element in range(n_elements):
-
-        x_left = nodes[element]
-        x_right = nodes[element + 1]
-        h_K = h[element]
-
-        # Map Gauss points
-        # [-1,1] -> K.
-        x_quad = (
-            0.5
-            * (x_left + x_right)
-            +
-            0.5
-            * h_K
-            * gauss_points
-        )
-
-        w_quad = (
-            0.5
-            * h_K
-            * gauss_weights
-        )
-
-        xi = (
-            x_quad - x_left
-        ) / h_K
-
-        basis_values = p1_basis(xi)
-
-        # lambda_h restricted to K.
+    # Evaluate element integrals in batches.  This is the *same* Gauss-rule
+    # P1 residual h_K^2 ||f_reg + lambda_h||^2; no estimator terms change.
+    # Batch to bound memory consumption for very large adaptive meshes.
+    residual_l2_squared = np.empty(n_elements, dtype=float)
+    xi = 0.5 * (gauss_points + 1.0)
+    left_basis = 1.0 - xi
+    right_basis = xi
+    for start in range(0, n_elements, 16384):
+        stop = min(start + 16384, n_elements)
+        h_batch = h[start:stop]
+        # Reference-element basis values avoid cancellation from
+        # (x_quad - x_left)/h on extremely small elements.
+        x_quad = nodes[start:stop, None] + h_batch[:, None] * xi[None, :]
+        f_values = np.asarray(regular_load(x_quad), dtype=float)
         lambda_values = (
-            mu_full[element]
-            * basis_values[0]
-            +
-            mu_full[element + 1]
-            * basis_values[1]
+            mu_full[start:stop, None] * left_basis[None, :]
+            + mu_full[start + 1:stop + 1, None] * right_basis[None, :]
         )
-
-        f_values = np.asarray(
-            regular_load(x_quad),
-            dtype=float,
+        residual_values = f_values + lambda_values
+        residual_l2_squared[start:stop] = (
+            0.5 * h_batch
+            * np.sum(gauss_weights[None, :] * residual_values**2, axis=1)
         )
-
-        # P1:
-        #
-        # u_h'' = 0
-        #
-        # inside every element.
-        residual_values = (
-            f_values
-            + lambda_values
-        )
-
-        residual_l2_squared[element] = np.sum(
-            w_quad
-            * residual_values ** 2
-        )
-
-        volume_eta_squared[element] = (
-            h_K ** 2
-            * residual_l2_squared[element]
-        )
+    volume_eta_squared = h**2 * residual_l2_squared
 
     # =================================================
     # 4. Full residual indicator

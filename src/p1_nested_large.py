@@ -279,6 +279,56 @@ def _p1_gap_load(lower, diagonal, upper, F):
     return rhs
 
 
+def _solve_p1_gap_high_precision(nodes, F, active):
+    """Solve a fixed P1 active set using high-precision gap coordinates.
+
+    On very strongly graded meshes, assembling the stiffness diagonals and
+    eliminating in binary64 can distort the solution even when the scaled
+    free-equation residual is tiny. Rebuild 1/h from element lengths with
+    Decimal precision, retaining the original assembled load F. No change
+    is made to the FEM discretization or the active-set constraints.
+    """
+    from decimal import Decimal, localcontext
+
+    n = len(active)
+    D = Decimal.from_float
+    gap = np.zeros(n, dtype=float)
+    free = ~active
+    starts = np.flatnonzero(free & ~np.r_[False, free[:-1]])
+    ends = np.flatnonzero(free & ~np.r_[free[1:], False]) + 1
+    with localcontext() as context:
+        context.prec = 45
+        sizes = [D(float(nodes[i + 1] - nodes[i]))
+                 for i in range(n + 1)]
+        inv_h = [1 / h for h in sizes]
+        rhs = [D(float(value)) for value in F]
+        # The physical obstacle is -1, so the shifted gap has g=1 at
+        # both boundary nodes, and g=0 on active interior nodes.
+        rhs[0] += inv_h[0]
+        rhs[-1] += inv_h[-1]
+        for first, last in zip(starts, ends):
+            m = int(last - first)
+            c = [Decimal(0)] * m
+            d = [Decimal(0)] * m
+            for i in range(m):
+                j = int(first + i)
+                diagonal = inv_h[j] + inv_h[j + 1]
+                lower = -inv_h[j] if i else Decimal(0)
+                upper = -inv_h[j + 1] if i + 1 < m else Decimal(0)
+                pivot = diagonal - lower * c[i - 1] if i else diagonal
+                if pivot <= 0:
+                    raise ArithmeticError('Nonpositive P1 free-set pivot')
+                c[i] = upper / pivot
+                d[i] = ((rhs[j] - lower * d[i - 1]) / pivot
+                        if i else rhs[j] / pivot)
+            value = d[-1]
+            gap[int(last - 1)] = float(value)
+            for i in range(m - 2, -1, -1):
+                value = d[i] - c[i] * value
+                gap[int(first + i)] = float(value)
+    return gap
+
+
 def solve_pdas_p1_gap(
     nodes,
     lower,
@@ -333,13 +383,16 @@ def solve_pdas_p1_gap(
         starts = np.flatnonzero(free & ~np.r_[False, free[:-1]])
         ends = np.flatnonzero(free & ~np.r_[free[1:], False]) + 1
 
-        for first, last in zip(starts, ends):
-            gap[first:last] = thomas(
-                lower[first:last],
-                diagonal[first:last],
-                upper[first:last],
-                rhs[first:last],
-            )
+        if np.max(np.diff(nodes)) / np.min(np.diff(nodes)) > 1e6:
+            gap = _solve_p1_gap_high_precision(nodes, F, active)
+        else:
+            for first, last in zip(starts, ends):
+                gap[first:last] = thomas(
+                    lower[first:last],
+                    diagonal[first:last],
+                    upper[first:last],
+                    rhs[first:last],
+                )
 
         multiplier = matvec(lower, diagonal, upper, gap) - rhs
         new_active = np.empty_like(active)
