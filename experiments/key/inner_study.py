@@ -104,6 +104,7 @@ def verify(args):
                 problems.append(f'MISSING {path.relative_to(ROOT)}')
                 continue
             sidecar = path.with_suffix('.protocol.json')
+            series_min_h = args.min_h
             if sidecar.exists():
                 config = json.loads(sidecar.read_text())
                 if (config.get('mesh_rel_tol') is not None or
@@ -111,6 +112,10 @@ def verify(args):
                     config.get('max_dofs') != args.max_dofs or
                     config.get('min_h') < args.min_h*(1 - 1e-10)):
                     problems.append(f'{case} P{degree} {method}: sidecar protocol disagrees')
+                if (config.get('case') != case or config.get('degree') != degree
+                        or config.get('method') != method):
+                    problems.append(f'{case} P{degree} {method}: sidecar identity disagrees')
+                series_min_h = max(args.min_h, config.get('min_h', args.min_h))
             with path.open(newline='') as stream:
                 rows = list(csv.DictReader(stream))
             if not rows:
@@ -124,7 +129,12 @@ def verify(args):
                     tolerance = float(row['pdas_rel_tol'])
                     min_h = float(row['min_h'])
                     eta = float(row['eta'])
-                    float(row['pdas_eta_ratio'])
+                    ratio = float(row['pdas_eta_ratio'])
+                    history = np.asarray(json.loads(row['pdas_eta_history']), dtype=float)
+                    iterations = int(row['iterations'])
+                    errors = [float(row[key]) for key in ('h1_error', 'l2_error')]
+                    diagnostics = [float(row[key]) for key in
+                                   ('min_gap', 'min_active_multiplier', 'scaled_free_residual')]
                 except (ValueError, TypeError, KeyError) as exc:
                     problems.append(f'{where}: missing/invalid inner PDAS diagnostics ({exc})')
                     continue
@@ -137,12 +147,31 @@ def verify(args):
                     problems.append(f'{where}: outer mesh tolerance still enabled')
                 if row.get('stop_reason') == 'relative_estimator':
                     problems.append(f'{where}: stopped at outer estimator threshold')
-                if min_h < args.min_h * (1 - 1e-10):
-                    problems.append(f'{where}: min_h={min_h:g} below chosen safeguard {args.min_h:g}')
+                if not np.isfinite(min_h) or min_h < series_min_h * (1 - 1e-10):
+                    problems.append(f'{where}: min_h={min_h:g} below chosen safeguard {series_min_h:g}')
                 if dofs <= previous_dofs or dofs > args.max_dofs:
                     problems.append(f'{where}: nonincreasing DOFs or DOF cap exceeded')
-                if not np.isfinite(eta):
-                    problems.append(f'{where}: nonfinite estimator')
+                if not np.all(np.isfinite([eta, ratio, *errors, *diagnostics])) or min(eta, ratio, *errors) < 0:
+                    problems.append(f'{where}: nonfinite or negative error/indicator diagnostics')
+                if int(row['level']) != level or dofs != degree*int(row['elements'])-1:
+                    problems.append(f'{where}: inconsistent level/elements/DOFs')
+                if history.ndim != 1 or len(history) != iterations+1 or iterations < 1:
+                    problems.append(f'{where}: invalid PDAS history length')
+                elif (not np.all(np.isfinite(history)) or np.any(history < 0)
+                      or history[0] <= 0 or not np.isclose(history[-1], eta, rtol=1e-10, atol=0)
+                      or not np.isclose(history[-1]/history[0], ratio, rtol=1e-10, atol=0)):
+                    problems.append(f'{where}: inconsistent same-mesh PDAS indicator history')
+                pdas_stop = row.get('pdas_stop_reason')
+                if pdas_stop not in ('active_set_stable', 'relative_indicator'):
+                    problems.append(f'{where}: invalid PDAS stop')
+                if pdas_stop == 'active_set_stable' and row.get('active_set_stable') != 'True':
+                    problems.append(f'{where}: claimed stability without a stable active set')
+                if pdas_stop == 'relative_indicator' and ratio > tolerance*(1+1e-10):
+                    problems.append(f'{where}: relative exit above tolerance')
+                if diagnostics[0] < -1e-9 or diagnostics[1] < -1e-8 or not 0 <= diagnostics[2] <= 1e-12:
+                    problems.append(f'{where}: stored nodal/scaled KKT check fails')
+                if level < len(rows)-1 and row.get('stop_reason'):
+                    problems.append(f'{where}: premature terminal marker')
                 previous_dofs = dofs
             last = rows[-1]
             if last['stop_reason'] not in ('dof_cap','mesh_resolution','max_levels','nothing_marked'):
@@ -264,8 +293,8 @@ def main():
     parser.add_argument('--max-dofs', type=int, default=300000)
     parser.add_argument('--max-levels', type=int, default=60)
     parser.add_argument('--inner-tol', type=float, default=1e-3)
-    parser.add_argument('--min-h', type=float, default=64*np.finfo(float).eps)
-    parser.add_argument('--cases', nargs='+', choices=CASES, default=list(CASES))
+    parser.add_argument('--min-h', type=float, default=1e-12)
+    parser.add_argument('--cases', nargs='+', choices=CASES, default=['sine_dirac', 'no_exact'])
     parser.add_argument('--degrees', nargs='+', type=int, choices=(1, 2), default=[1, 2],
                         help='Run only these polynomial degrees (run action only)')
     parser.add_argument('--methods', nargs='+', choices=('uniform','adaptive'),

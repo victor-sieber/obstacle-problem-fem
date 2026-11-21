@@ -383,7 +383,10 @@ def solve_pdas_p1_gap(
         starts = np.flatnonzero(free & ~np.r_[False, free[:-1]])
         ends = np.flatnonzero(free & ~np.r_[free[1:], False]) + 1
 
-        if np.max(np.diff(nodes)) / np.min(np.diff(nodes)) > 1e6:
+        # Large uniform/mildly graded meshes also accumulate solve error.
+        # Same-mesh checks show that grading alone misses the L2 accuracy
+        # floor; use the existing 45-digit solve above 15000 elements too.
+        if np.max(np.diff(nodes)) / np.min(np.diff(nodes)) > 1e6 or n + 1 >= 15000:
             gap = _solve_p1_gap_high_precision(nodes, F, active)
         else:
             for first, last in zip(starts, ends):

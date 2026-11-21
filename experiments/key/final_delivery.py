@@ -47,6 +47,8 @@ def checked_histories(args):
 
 def plot_histories(args):
     _, histories = checked_histories(args)
+    plt.rcParams.update({'font.size': 11, 'axes.labelsize': 11,
+                         'axes.titlesize': 12, 'legend.fontsize': 10})
     out = ROOT / 'figures/key/inner_study' / f'budget_{args.max_dofs}' / 'final'
     out.mkdir(parents=True, exist_ok=True)
     metrics = (
@@ -55,7 +57,7 @@ def plot_histories(args):
         ('eta', r'Residual estimator $\eta$', 'estimator_convergence.png'),
     )
     for metric, ylabel, filename in metrics:
-        fig, axes = plt.subplots(1, 2, figsize=(11, 4.1), constrained_layout=True)
+        fig, axes = plt.subplots(1, 2, figsize=(9.4, 4.1), constrained_layout=True)
         for ax, case in zip(axes, CASES):
             for degree, method in PAIRS:
                 rows = histories[case, degree, method]
@@ -68,7 +70,7 @@ def plot_histories(args):
             ax.set_xlabel('Interior degrees of freedom')
             ax.set_ylabel(ylabel)
             ax.grid(which='both', alpha=0.2)
-            ax.legend(fontsize=8)
+            ax.legend(fontsize=9)
         fig.savefig(out / filename, dpi=180)
         plt.close(fig)
         print('Saved:', out / filename, flush=True)
@@ -125,7 +127,11 @@ def warm_starts(args):
                     ))
                     write_rows(output, rows)
                     print('Warm start:', rows[-1], flush=True)
-    out = ROOT / 'figures/key/inner_study' / f'budget_{args.max_dofs}' / 'final'
+    plot_initializations(folder, rows)
+
+
+def plot_initializations(folder, rows):
+    out = ROOT / 'figures/key/inner_study' / folder.name / 'final'
     out.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(2, 2, figsize=(10, 7), constrained_layout=True)
     for i, case in enumerate(CASES):
@@ -133,9 +139,9 @@ def warm_starts(args):
             ax = axes[i, j]
             for method in INITIALIZATIONS:
                 selected = [r for r in rows if r['case'] == case
-                            and r['degree'] == degree and r['initialization'] == method]
-                ax.semilogx([r['dofs'] for r in selected],
-                            [r['iterations'] for r in selected], '-o', label=method)
+                            and int(r['degree']) == degree and r['initialization'] == method]
+                ax.semilogx([int(r['dofs']) for r in selected],
+                            [int(r['iterations']) for r in selected], '-o', label=method)
             ax.set(title=f'{case}, P{degree}', xlabel='Interior DOFs',
                    ylabel='PDAS iterations')
             ax.grid(alpha=0.2)
@@ -143,7 +149,7 @@ def warm_starts(args):
     figure = out / 'initialization_comparison.png'
     fig.savefig(figure, dpi=180)
     plt.close(fig)
-    print('Saved:', output, '\nSaved:', figure, flush=True)
+    print('Saved:', figure, flush=True)
 
 
 def main():
@@ -164,6 +170,10 @@ def main():
         checked_histories(args)
     elif args.action == 'plots':
         plot_histories(args)
+        folder = ROOT / 'results/key/inner_study' / f'budget_{args.max_dofs}'
+        with (folder / 'warm_starts_inner.csv').open(newline='', encoding='utf-8') as handle:
+            with plt.rc_context(plt.rcParamsDefault):
+                plot_initializations(folder, list(csv.DictReader(handle)))
     else:
         warm_starts(args)
 

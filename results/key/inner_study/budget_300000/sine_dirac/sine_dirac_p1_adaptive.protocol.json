@@ -1,0 +1,10 @@
+{
+  "case": "sine_dirac",
+  "degree": 1,
+  "method": "adaptive",
+  "pdas_rel_tol": 0.001,
+  "mesh_rel_tol": null,
+  "max_dofs": 300000,
+  "max_levels": 60,
+  "min_h": 1e-12
+}

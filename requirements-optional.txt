@@ -1,0 +1,3 @@
+-r requirements.txt
+# Only the self-directed local LLM extension requires this package.
+ollama

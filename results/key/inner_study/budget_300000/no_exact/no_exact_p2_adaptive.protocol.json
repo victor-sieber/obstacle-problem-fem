@@ -1,0 +1,10 @@
+{
+  "case": "no_exact",
+  "degree": 2,
+  "method": "adaptive",
+  "pdas_rel_tol": 0.001,
+  "mesh_rel_tol": null,
+  "max_dofs": 300000,
+  "max_levels": 60,
+  "min_h": 2e-09
+}

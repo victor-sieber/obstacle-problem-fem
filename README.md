@@ -1,369 +1,56 @@
-# Finite Element Methods for Obstacle Problems and American Optimal Stopping
+# Beyond the Obstacle
 
-Numerical Practicum project at the University of Zurich.
+Victor Sieber · Numerical Practicum · University of Zurich
 
-The core project develops finite element methods for one-dimensional obstacle problems, starting from the variational inequality and the resulting finite-dimensional complementarity problem.
+Where does a loaded string touch a rigid obstacle? This project computes its shape and tests two ways of reducing the work: placing more mesh points where the string changes slope, and using a coarse solution to guess which points will touch on the next grid.
 
-> **Scope.** The American option pricing and local LLM components are self-directed extensions outside of the Numerical Practicum.
+## What the experiments show
 
-## Project overview
-
-### Numerical Practicum core
-
-The current project includes:
-
-- P1 and P2 finite element discretizations for one-dimensional obstacle problems,
-- primal-dual active-set (PDAS) solution of the discrete complementarity problem,
-- comparison of PDAS with L-BFGS-B,
-- validation against exact obstacle-problem solutions,
-- $L^2$ and $H^1$-seminorm convergence experiments,
-- aligned and non-aligned smooth benchmark cases,
-- singular-load experiments with Dirac delta forcing,
-- P1-P2 comparisons under smooth and reduced-regularity settings.
-
-## Practicum experiments
-
-| Topic | Run with `python -m` | Figures |
-| --- | --- | --- |
-| Sine–Dirac | `experiments.key.sine_dirac.convergence` | [Sine–Dirac figures](figures/key/sine_dirac/) |
-| Obstacle problem without a prescribed exact solution | `experiments.key.no_exact.convergence` | [Contact and estimator figures](figures/key/no_exact/) |
-| PDAS warm starts | `experiments.key.pdas_scaling.warm_starts` | [PDAS scaling figures](figures/key/pdas_scaling/) |
-
-Regenerate the first two sets of figures with `python -m experiments.key.plot_benchmarks`.
-Validation scripts are grouped by benchmark, estimator, or solver under
-`experiments/validation/`. Tables and solution snapshots follow the same topic layout under
-`results/`.
-
-## Continuous obstacle problem
-
-Let $[a,b]$ be a bounded interval. We consider the energy functional
-
-$$J(v)=\frac{1}{2}\int_a^b |v'(x)|^2\,dx-\int_a^b f(x)v(x)\,dx.$$
-
-The admissible set is
-
-$$K=\{v\in H_0^1(a,b):v\geq\psi\}.$$
-
-The obstacle problem is to find
-
-$$u=\mathop{\mathrm{argmin}}_{v\in K}J(v).$$
-
-The corresponding variational inequality is
-
-$$\int_a^b u'(x)(v-u)'(x)\,dx\geq\int_a^b f(x)(v-u)(x)\,dx\quad\text{for all }v\in K.$$
-
-Formally, the obstacle problem satisfies
-
-$$u-\psi\geq0,\qquad -u''-f\geq0,\qquad (u-\psi)(-u''-f)=0.$$
-
-In the free region, where $u>\psi$,
-
-$$-u''=f.$$
-
-In the contact region,
-
-$$u=\psi.$$
-
-## P1 finite element discretization
-
-Let
-
-$$a=x_0<x_1<\cdots<x_N=b$$
-
-be a partition of the interval into $N$ finite elements.
-
-The discrete space consists of continuous piecewise-linear functions that vanish at the boundary.
-
-Let $\lambda_1,\ldots,\lambda_{N-1}$ denote the nodal hat functions associated with the interior nodes.
-
-A discrete function is written as
-
-$$v_h(x)=\sum_{i=1}^{N-1}V_i\lambda_i(x).$$
-
-Because $\lambda_i(x_j)=\delta_{ij}$, the coefficients are the values at the interior mesh nodes:
-
-$$V_i=v_h(x_i).$$
-
-## Discrete obstacle
-
-The obstacle is approximated by its piecewise-linear nodal interpolant $\psi_h=I_h\psi$.
-
-At the interior nodes, define $\Psi_i=\psi(x_i)$.
-
-The obstacle constraint becomes
-
-$$V_i\geq\Psi_i,\qquad i=1,\ldots,N-1.$$
-
-For P1 finite elements, these nodal inequalities are sufficient to enforce the inequality against the piecewise-linear interpolated obstacle on each element.
-
-## Matrix formulation
-
-Substituting the finite element expansion into the energy functional gives
-
-$$J(v_h)=\frac{1}{2}V^TAV-F^TV.$$
-
-The stiffness matrix is defined by $A_{ij}=\int_a^b\lambda_i'(x)\lambda_j'(x)\,dx$.
-
-The load vector is defined by $F_i=\int_a^b f(x)\lambda_i(x)\,dx$.
-
-For a uniform mesh with mesh size $h=(b-a)/N$, the stiffness matrix is tridiagonal with diagonal entries $A_{ii}=2/h$ and neighboring off-diagonal entries $A_{i,i+1}=A_{i+1,i}=-1/h$.
-
-The discrete obstacle problem is
-
-$$\min_{V\geq\Psi}\left(\frac{1}{2}V^TAV-F^TV\right).$$
-
-Its discrete complementarity conditions are
-
-$$V-\Psi\geq0,\qquad AV-F\geq0,$$
-
-together with
-
-$$(V_i-\Psi_i)(AV-F)_i=0$$
-
-for every interior node $i$.
-
-The vector $AV-F$ is the discrete weak residual associated with the continuous reaction term $-u''-f$. At a free node the residual vanishes, while at a contact node it may be positive.
-
-## Benchmark problem
-
-The implementation is tested on the benchmark discussed in the Numerical Practicum.
-
-The domain is $[0,1]$ and the load is
-
-$$f(x)=-1.$$
-
-For $0<\alpha<1/2$, the obstacle is
-
-$$\psi(x)=x(1-x)-\frac{3}{2}\alpha^2.$$
-
-The exact solution is defined piecewise.
-
-For $0\leq x<\alpha$,
-
-$$u(x)=\frac{x^2}{2}+(1-3\alpha)x.$$
-
-For $\alpha\leq x\leq1-\alpha$,
-
-$$u(x)=\psi(x).$$
-
-For $1-\alpha<x\leq1$,
-
-$$u(x)=\frac{(1-x)^2}{2}+(1-3\alpha)(1-x).$$
-
-The exact contact region is
-
-$$[\alpha,1-\alpha].$$
-
-Because an exact solution is available, the finite element approximation can be validated directly.
-
-## Numerical experiments
-
-`experiments/validation/benchmarks/run_example.py` solves the benchmark problem for a fixed mesh and compares:
-
-- the exact solution,
-- the P1 finite element approximation,
-- the obstacle.
-
-`experiments/validation/benchmarks/convergence.py` repeats the computation for increasingly fine meshes and evaluates the numerical error.
-
-For the benchmark with $\alpha=0.2$, the experiments give approximately
-
-$$\|u-u_h\|_{L^2}=O(h^2)$$
-
-and
-
-$$|u-u_h|_{H^1}=O(h).$$
-
-### Self-directed extensions (outside the Numerical Practicum)
-
-- American put option pricing using the obstacle-problem framework,
-- numerical recovery of the early-exercise boundary and validation against a Cox-Ross-Rubinstein benchmark,
-- a local tool-using LLM interface built on top of deterministic option analytics.
-
-## Self-directed extension: American option pricing
-
-The American-option extension applies the same obstacle-problem framework to optimal stopping.
-
-For an American put with payoff $g(S)=\max(K-S,0)$, the option value satisfies the obstacle condition $V(t,S)\geq g(S)$.
-
-In the continuation region, where $V(t,S)>g(S)$, the Black-Scholes pricing PDE holds. In the exercise region, $V(t,S)=g(S)$. The interface between these regions is the free boundary and represents the optimal early-exercise boundary.
-
-The implementation transforms the Black-Scholes problem to log-price coordinates, applies P1 finite elements in space and implicit Euler in time, and solves a bound-constrained convex quadratic optimization problem at each time step.
-
-For the benchmark parameters $S_0=100$, $K=100$, $r=0.05$, $\sigma=0.20$, and $T=1$, the current implementation produces an American put value of approximately $6.09$, compared with a European Black-Scholes value of approximately $5.57$.
-
-The American solver was independently checked against a 5000-step Cox-Ross-Rubinstein tree. Under joint mesh and time refinement, the FEM price approaches the numerical reference closely, although the difference is not monotone under joint refinement.
-
-See [`american_options/README.md`](american_options/README.md) for the financial formulation, validation, and implementation details.
-
-## Numerical results
-
-| American put value and payoff | Early-exercise boundary |
+| Question | Observation |
 | --- | --- |
-| ![American put value](figures/american_options/american_put_value.png) | ![American exercise boundary](figures/american_options/american_put_boundary.png) |
+| Where should mesh points go? | For the string with point loads (sine–Dirac), quadratic elements on an adaptive mesh give a slope error of **2.77 × 10⁻⁶ with 1,195 unknowns**. The nearest recorded uniform mesh has **1,279 unknowns and error 2.41 × 10⁻²**. |
+| Does the previous grid help find contact? | On the same 1,280-element fine grid, the sine–Dirac P1 solve takes **234 iterations** from a cold start, **177** when transferring the shape, and **5** when transferring both shape and supporting forces. All three reach the same solution within 10⁻⁸ at the nodes. |
+| Is transferring the force always worthwhile? | For P2 under the regular load the corresponding counts are **487, 3 and 9**. Here the shape alone gives the best starting guess as measured by iterations. |
+| Can the indicator stop the contact iteration early? | On all **174 mesh solves** in the eight convergence runs, the recorded stopping reason was a stable contact set. The tested inner threshold of 10⁻³ produced no early exits. |
 
-The American option value stays above the immediate-exercise payoff. The recovered free boundary separates the exercise and continuation regions.
+![Error in the string slope versus number of unknowns for both loads](figures/key/inner_study/budget_300000/final/h1_convergence.png)
 
-## Visual intuition: obstacle structure and time to maturity
+The slope error is the H¹ seminorm of the difference between the computed and reference shapes. The two other convergence plots give the displacement error and the computed error indicator. [All four report figures](figures/key/inner_study/budget_300000/final/)
 
-The animation below shows numerical American put solutions for increasing times to maturity.
+## How the calculation works
 
-Close to expiration, the option value approaches the immediate-exercise payoff. With more time remaining, continuation value develops and the option value separates from the payoff over a larger region.
+At contact the gap is zero, and away from contact the obstacle exerts zero force. The primal–dual active-set method (PDAS) uses these two conditions to update its guess for the contact nodes. P1 joins nodal heights with straight lines. P2 also uses an element midpoint and allows curvature. The adaptive method bisects intervals where the computed force imbalance or a change of slope makes the local indicator large. Reference solutions are used afterwards to evaluate accuracy.
 
-The marked contact point is the estimated early-exercise boundary. It separates the exercise region, where the option value coincides with the payoff, from the continuation region, where retaining the option is more valuable than exercising immediately.
+For the regular load the reference contact interval starts at about 0.42139863. The directory name `no_exact` dates from before this reference was derived. On very fine grids solver precision can affect measured accuracy. A controlled example and its limits are described in the [precision diagnostic](docs/PRECISION_DIAGNOSTIC.md). In particular P2 enforces the obstacle at nodes and can dip below it between nodes. The indicator has been tested numerically for these two problems.
 
-![American option obstacle evolution](figures/american_options/american_put_evolution.gif)
+## Reproduce the handout results
 
-## Self-directed extension: Local LLM analytics layer
-
-The American-option extension also contains a local tool-using LLM interface.
-
-The design principle is simple:
-
-> The numerical solver is the quantitative source of truth. The language model is the interaction layer.
-
-The architecture is:
-
-```text
-User question
-    |
-    v
-Local LLM
-Ollama + qwen3:8b
-    |
-    v
-Tool selection
-american_options/ai_assistant.py
-    |
-    v
-Deterministic analytics
-american_options/analytics.py
-    |
-    +-- price_option
-    +-- compare_scenarios
-    +-- sweep_parameter
-    +-- analyze_exercise_boundary
-    +-- get_model_information
-    |
-    v
-Validated numerical engine
-american_options/american_option.py
-    |
-    v
-Structured numerical result
-    |
-    v
-Natural-language explanation
-```
-
-Example questions include:
-
-- "What numerical model do you use and how has it been validated?"
-- "Price an American put with spot 100, strike 100, volatility 20%, rate 5%, and one year to maturity."
-- "What happens if volatility rises from 20% to 30% while everything else stays the same?"
-
-The LLM is instructed to call deterministic tools for quantitative option results rather than inventing prices.
-
-Input validation is handled by the deterministic analytics layer. For example, invalid inputs such as negative volatility are rejected before reaching the numerical solver.
-
-The current interface runs locally and does not require a paid external LLM API.
-
-## Project structure
-
-```text
-obstacle-problem-fem/
-├── src/                  # FEM assembly, problem definitions, solvers
-├── experiments/          # core convergence, solver, P1/P2, and Dirac experiments
-├── figures/              # generated figures
-├── results/              # numerical output tables
-├── american_options/     # self-directed finance and LLM extensions
-├── README.md
-├── requirements.txt
-└── .gitignore
-```
-
-The Numerical Practicum core is contained in `src/`, `experiments/`, `figures/`, and `results/`. The `american_options/` directory is a separate self-directed extension.
-
-## Running the code
-
-Create and activate a virtual environment:
+Run from the repository root with Python 3.10 or later and the dependencies in `requirements.txt`.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m experiments.key.final_delivery check
+python -m experiments.key.final_delivery plots
 ```
 
-Install the Python dependencies:
+The plotting command reads recorded CSVs and draws all four experiment figures without a new PDE solve. The two introductory sketches are drawn by the handout's LaTeX source. For independent checks run:
 
 ```bash
-pip install -r requirements.txt
+python -m experiments.validation.solvers.final_checks
+python -m experiments.validation.estimators.verify_gap_sine_integration
+python -m experiments.validation.solvers.submission_checks
 ```
 
-Run the obstacle-problem benchmark:
+The last command repeats the 1,280-element comparisons and writes a machine-specific check record. The [final protocol](FINAL_EXPERIMENTS.md) gives the commands for recomputing the studies and the mesh limits for each case. Iterations and recorded timings measure different things. The timings exclude the common coarse solve.
 
-```bash
-python experiments/validation/benchmarks/run_example.py
-```
+| Resource | Where to look |
+| --- | --- |
+| Eight convergence histories and per-run settings | [Canonical dataset](results/key/inner_study/budget_300000/) |
+| Iterations and timings on identical fine grids | [Warm-start table](results/key/inner_study/budget_300000/warm_starts_inner.csv) |
+| Summary of mesh sizes, errors and stop reasons | [Verified summary](results/key/inner_study/budget_300000/verified_summary.csv) |
+| FEM, refinement and transfer code | [src](src/) and [experiment drivers](experiments/key/) |
+| Precision checks and original histories before the P1 fix | [Validation evidence](results/validation/submission/) |
 
-Run the obstacle-problem convergence study:
+The earlier `final_study` and `budget_200` runs use other settings. For the handout use the `budget_300000` series above. The separate American-option and local-LLM work in [american_options](american_options/README.md) is an independent extension outside the practicum benchmarks.
 
-```bash
-python experiments/validation/benchmarks/convergence.py
-```
-
-Run the American put example:
-
-```bash
-python american_options/experiments/run_american_put.py
-```
-
-Run the American put validation study:
-
-```bash
-python american_options/experiments/convergence_validation.py
-```
-
-Generate the American-option animation:
-
-```bash
-python american_options/experiments/make_exercise_animation.py
-```
-
-## Running the local LLM interface
-
-The LLM layer uses Ollama with the local `qwen3:8b` model.
-
-Install Ollama separately, then pull the model:
-
-```bash
-ollama pull qwen3:8b
-```
-
-Start the local Ollama service:
-
-```bash
-ollama serve
-```
-
-In another terminal, activate the Python environment and start the assistant:
-
-```bash
-source .venv/bin/activate
-python american_options/experiments/run_ai_assistant.py
-```
-
-The local language model selects deterministic pricing and analytics tools. Quantitative option results are produced by the numerical engine rather than by the LLM itself.
-
-## Requirements
-
-Python dependencies:
-
-- NumPy
-- SciPy
-- Matplotlib
-- Ollama Python client
-
-The optional local LLM interface additionally requires:
-
-- Ollama
-- `qwen3:8b`
+The [audit](docs/INDEPENDENT_AUDIT.md) and its artifact hashes document the November 18 review. The handout and plotting entry point were subsequently revised.

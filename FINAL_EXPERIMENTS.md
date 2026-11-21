@@ -1,161 +1,117 @@
-# Final numerical experiments — reproducibility checklist
+# Final experiment protocol — 18 November 2026
 
-## Scope and rules
+The English handout and its eight core histories are the submission baseline.
+The three remaining P1 accuracy reruns were completed during this review.
+No further large run is required to read, validate, or plot the delivered data.
 
-The final *core* study consists of eight mesh histories: `sine_dirac` and
-`no_exact`, each with P1/P2 finite elements and uniform/adaptive meshes.
-Use the existing maximum marking rule (`theta=0.5`) and L2-Riesz nested PDAS
-initialization on successive meshes. The P1/P2 free-set solves use extended
-precision when needed for strongly graded meshes; P2 also uses extended precision
-on very large uniform meshes. The FEM method and marking are unchanged.
+## Fixed protocol
 
-- Inner PDAS indicator tolerance: `1e-3`, safeguarded by the discrete KKT conditions.
-- Outer mesh estimator stopping tolerance: **disabled** (`mesh_rel_tol=None`).
-- Maximum DOFs: `300000` **as a ceiling, not a target**.
-- Minimum post-bisection element size: normally `1e-12` on `(0,1)`.
-  **Exception:** the very accurate `no_exact` P2 adaptive series uses
-  `2e-9` to stop at the onset of the verified floating-point accuracy floor.
-  This is a numerical-safeguard parameter, not an outer estimator tolerance.
-- Maximum adaptive levels: `60`.
-- Accept terminal reasons `dof_cap`, `mesh_resolution`, `max_levels`, or
-  `nothing_marked`. Do not combine histories from incompatible protocols.
+| Setting | Final value |
+| --- | --- |
+| Cases | `sine_dirac`, `no_exact` |
+| FEM / mesh | P1 and P2; uniform and adaptive |
+| Initial mesh | 20 equal elements |
+| Initialization after refinement | Riesz dual transfer and interpolated shifted primal variable |
+| Marking | Maximum rule, theta = 0.5; all elements for uniform refinement |
+| Inner PDAS ratio | eta(k)/eta(0) on each fixed mesh, tolerance 0.001 |
+| Inner relative-exit safeguard | Absolute nodal KKT tolerance 1e-8 |
+| Stable-set acceptance | Wrapper checks gap >= -1e-9, active dual >= -1e-8, scaled free residual and complementarity <= 1e-12 |
+| Outer estimator stopping | Disabled (`mesh_rel_tol=None`) |
+| Interior DOF ceiling | 300000 |
+| Maximum refinement level | 60 (initial level is zero) |
+| Prospective minimum width | 1e-12; **2e-9 for no_exact P2 adaptive** |
+| Precision | P1: Decimal 45 digits if max(h)/min(h)>1e6 or elements>=15000; P2: Decimal 40 digits if ratio>1e3 or elements>=15000 |
 
-## Steps (execute from the repository root)
+Boundary gaps are 1 and contact gaps are 0. Loads and returned arrays remain
+binary64. Uniform bisection may stop well below the DOF ceiling because the next
+complete refinement would exceed it. Per-series sidecars record mesh limits.
+`configuration.json` is the latest targeted invocation, not combined provenance.
+`summary.csv` is synchronized with `verified_summary.csv` in this delivery;
+`run_progress.csv` remains only the most recent run's progress record.
 
-### 0. Check disk space and repository changes
-
-```bash
-df -h .
-git status --short
-```
-
-Free at least several gigabytes before large runs. The source changes from
-the performance and protocol patches should remain visible until committed.
-
-### 1. Run validation (short)
+## Routine checks and plots
 
 ```bash
 python -m experiments.validation.solvers.final_checks
-```
-
-### 2. Regenerate the regular-load P2 adaptive curve after the precision fix
-
-This **one** series must be rerun with its stronger mesh-resolution safeguard.
-The old CSV was calculated using the less accurate binary64 P2 solve:
-
-```bash
-python -m experiments.key.inner_study run \
-  --cases no_exact --degrees 2 --methods adaptive \
-  --max-dofs 300000 --max-levels 60 --inner-tol 1e-3 --min-h 2e-9
-```
-
-The seven other core histories were completed in the November 16 run. Do not
-rerun them unless verification finds a real problem. Historical `split20`,
-`split40`, `split80` experiments remain archived/optional, not required for
-this final eight-series core.
-
-### 2b. Recompute the two L2-accuracy regression histories
-
-The following commands must be run **once after** the P1/P2 precision fix.
-Previous histories were generated with binary64 factorization and can show
-false L2 error increases at fine resolutions. Both files are overwritten
-only after each completed solve; keep the old CSVs in Git history if needed.
-
-```bash
-python -m experiments.key.inner_study run \
-  --cases sine_dirac --degrees 1 --methods adaptive \
-  --max-dofs 300000 --max-levels 60 --inner-tol 1e-3 --min-h 1e-12
-
-python -m experiments.key.inner_study run \
-  --cases no_exact --degrees 2 --methods uniform \
-  --max-dofs 300000 --max-levels 60 --inner-tol 1e-3 --min-h 1e-12
-```
-
-### 3. Verify all eight final core histories
-
-```bash
+python -m experiments.validation.estimators.verify_gap_sine_integration
 python -m experiments.key.final_delivery check
-```
-
-This calls the existing strict protocol verifier. It checks the CSV contents,
-inner tolerance, absence of an outer stop, mesh resolution, DOF limits and
-terminal reasons. Success writes `verified_summary.csv`; it does **not**
-independently prove numerical accuracy or validate unexpected convergence
-behaviour. Review the actual error curves too. The P1/P2 accuracy fixes have
-independent graded-mesh polynomial regressions in `final_checks.py`.
-
-### 4. Build the final convergence plots (no PDE solves)
-
-```bash
+python -m experiments.validation.solvers.submission_checks
 python -m experiments.key.final_delivery plots
 ```
 
-Output: `figures/key/inner_study/budget_300000/final/`
+The strengthened CSV check validates identities, finite errors, mesh limits,
+full inner histories and ratios, stop reasons and recorded nodal/scaled KKT
+quantities. It does not establish forward accuracy from a small residual.
+`submission_checks` independently reproduces the finest warm-start counts once;
+it does not replace three-repetition timing measurements.
 
-- `h1_convergence.png`: true H1-seminorm errors for both benchmarks.
-- `l2_convergence.png`: true L2 errors for both benchmarks.
-- `estimator_convergence.png`: residual estimator versus DOFs.
+Canonical outputs:
 
-Although named `no_exact`, that case has an independently derived analytical
-reference in `final_study.reference`, used for **error evaluation only**, not
-to generate the FE solutions or the adaptive indicator.
+- `results/key/inner_study/budget_300000/{sine_dirac,no_exact}/*.csv`
+- `results/key/inner_study/budget_300000/verified_summary.csv`
+- `results/key/inner_study/budget_300000/warm_starts_inner.csv`
+- `figures/key/inner_study/budget_300000/final/`
 
-### 5. Compare cold/primal/Riesz starts under the same inner stopping rule
+All 174 final mesh solves stabilized; no inner relative-indicator exit occurred.
+No speedup is attributed to the tolerance.
+
+## Reproduce the eight histories only if required
+
+These commands overwrite the selected canonical histories. Preserve a copy or
+Git commit first. They can take several minutes and create final `.npz`
+snapshots; snapshots are not required for the report or final CSV plotter.
+The following decomposition applies the P2 adaptive exception explicitly:
+
+```bash
+python -m experiments.key.inner_study run --cases sine_dirac --degrees 1 2 --methods uniform adaptive --max-dofs 300000 --max-levels 60 --inner-tol 1e-3 --min-h 1e-12
+python -m experiments.key.inner_study run --cases no_exact --degrees 1 --methods uniform adaptive --max-dofs 300000 --max-levels 60 --inner-tol 1e-3 --min-h 1e-12
+python -m experiments.key.inner_study run --cases no_exact --degrees 2 --methods uniform --max-dofs 300000 --max-levels 60 --inner-tol 1e-3 --min-h 1e-12
+python -m experiments.key.inner_study run --cases no_exact --degrees 2 --methods adaptive --max-dofs 300000 --max-levels 60 --inner-tol 1e-3 --min-h 2e-9
+python -m experiments.key.final_delivery check
+python -m experiments.key.final_delivery plots
+```
+
+Five histories were retained from the uploaded archive, three P1 histories were
+rerun. The new P1 trigger does not affect the retained sine–Dirac adaptive
+history: its grading trigger already selected high precision before it reached
+15000 elements. The P2 solver is unchanged. The source/data manifest records
+review-time hashes; it does not retroactively certify generation revisions for
+retained data.
+
+## Controlled warm-start experiment
 
 ```bash
 python -m experiments.key.final_delivery warm
 ```
 
-This independent experiment compares the three initializations on identical
-uniform fine meshes (80, 320, 1280 elements), with P1/P2 and both benchmark
-loads. It checks agreement with the cold-start solution to `1e-8`. Results:
+This replaces the CSV and initialization figure. On identical uniform meshes
+with 80, 320 and 1280 elements it compares cold, primal-only and Riesz starts.
+Each uses the same coarse solution, fine problem and stopping settings.
+The reported median is over three trials, excluding the common coarse solve
+but including transfer, assembly, PDAS, indicators and diagnostic checks.
+It excludes true-error evaluation and is not total adaptive runtime.
 
-- `results/key/inner_study/budget_300000/warm_starts_inner.csv`
-- `figures/key/inner_study/budget_300000/final/initialization_comparison.png`
+By contrast, convergence-history `wall_seconds` starts **after** transfer and
+ends **before** true-error quadrature, marking, refinement and output. Do not
+compare these columns as if they measured the same work.
 
-The common coarse solve is excluded from timing; transfer and fine-mesh solve
-are included. These are **solver-stage**, not end-to-end adaptive timings.
-
-### 6. Review the protocol and results
-
-```bash
-python -m experiments.key.final_delivery check
-git status --short
-```
-
-Check `verified_summary.csv` for each series' last DOF count, stop reason,
-minimum element size, and PDAS stop counts. The inner indicator threshold may
-never trigger because active-set stability or the KKT safeguard takes priority.
-This is a result to report rather than a reason to adjust the tolerance.
-
-### 7. Update the English handout and the German talk
-
-Use only verified figures for final core convergence claims. Historical smooth
-and Dirac solver/indicator validation figures may remain as *clearly labelled*
-validation figures, but do not describe them as final inner-protocol curves.
-Check every numerical sentence and notation in `beyond_the_obstacle.tex`.
-Fill its Abstract, Conclusion, Future work, and AI-use sections; rebuild
-`beyond_the_obstacle.pdf` with your LaTeX setup and visually inspect it.
-
-Keep the talk to ~8 slides, ~12–15 minutes of prepared explanation, leaving
-space for technical questions (35-minute session total).
-
-### 8. Commit only reviewed deliverables
+## Precision diagnostics and provenance
 
 ```bash
-git status --short
-git diff --check
-# Add files intentionally; do NOT use git add . while large results remain untracked.
-git add experiments/key/final_delivery.py FINAL_EXPERIMENTS.md \
-  experiments/key/inner_study.py experiments/key/final_study.py \
-  experiments/key/sine_dirac/convergence.py src/error_indicators.py \
-  README.md beyond_the_obstacle.tex
-# Add selected final figures and verified CSVs separately after reviewing their sizes.
-git diff --cached --stat
-git commit -m "Finalize inner-tolerance experiments and reproducible figures"
+python -m experiments.validation.solvers.precision_review
 ```
 
-Do not assume the above staged-source list covers every local modification;
-review `git status` and adjust it. Commit final figures/CSVs only according to
-the repository's storage and Git policy. Never include temporary CSVs from
-interrupted runs, massive `.npz` files, or machine-specific environments.
+This writes a small P2 controlled quadratic check under
+`results/validation/submission/` and a separate figure under
+`figures/presentation/precision_controlled.png`. It never writes final curves.
+It compares the retained binary64 physical solver against the current gap/
+precision solver; it is **not** a recovered historical obstacle experiment.
+The uploaded archive did not contain the earlier failing regular-load P2
+history. See `docs/PRECISION_DIAGNOSTIC.md` for the limitation and safe replay.
+
+Original P1 histories are preserved under
+`results/validation/submission/pre_precision_fix/`. The recorded
+`p1_tail_precision.csv` predates the broadened trigger and compares the same
+meshes and fixed active sets. Repeating `precision_review --p1-tail` now uses
+the corrected solver and should produce agreement with the high-precision
+check, rather than recreate the earlier error.

@@ -1,0 +1,113 @@
+{
+  "P1_Galerkin_mass_transfer": "PASS",
+  "P2_Galerkin_mass_transfer": "PASS",
+  "regular_contact_boundaries": [
+    0.4213986317286551,
+    0.5786013682713449
+  ],
+  "large_P1_max_nodal_error": 1.249000902703301e-16,
+  "warm_starts": [
+    {
+      "case": "sine_dirac",
+      "degree": 1,
+      "method": "cold",
+      "iterations": 234,
+      "max_difference": 0.0
+    },
+    {
+      "case": "sine_dirac",
+      "degree": 1,
+      "method": "primal",
+      "iterations": 177,
+      "max_difference": 0.0
+    },
+    {
+      "case": "sine_dirac",
+      "degree": 1,
+      "method": "riesz",
+      "iterations": 5,
+      "max_difference": 0.0
+    },
+    {
+      "case": "sine_dirac",
+      "degree": 2,
+      "method": "cold",
+      "iterations": 461,
+      "max_difference": 0.0
+    },
+    {
+      "case": "sine_dirac",
+      "degree": 2,
+      "method": "primal",
+      "iterations": 355,
+      "max_difference": 0.0
+    },
+    {
+      "case": "sine_dirac",
+      "degree": 2,
+      "method": "riesz",
+      "iterations": 9,
+      "max_difference": 0.0
+    },
+    {
+      "case": "no_exact",
+      "degree": 1,
+      "method": "cold",
+      "iterations": 243,
+      "max_difference": 0.0
+    },
+    {
+      "case": "no_exact",
+      "degree": 1,
+      "method": "primal",
+      "iterations": 51,
+      "max_difference": 0.0
+    },
+    {
+      "case": "no_exact",
+      "degree": 1,
+      "method": "riesz",
+      "iterations": 5,
+      "max_difference": 0.0
+    },
+    {
+      "case": "no_exact",
+      "degree": 2,
+      "method": "cold",
+      "iterations": 487,
+      "max_difference": 0.0
+    },
+    {
+      "case": "no_exact",
+      "degree": 2,
+      "method": "primal",
+      "iterations": 3,
+      "max_difference": 0.0
+    },
+    {
+      "case": "no_exact",
+      "degree": 2,
+      "method": "riesz",
+      "iterations": 9,
+      "max_difference": 0.0
+    }
+  ],
+  "environment": {
+    "python": "3.12.14",
+    "numpy": "2.3.5",
+    "scipy": "1.17.0"
+  },
+  "source_sha256": {
+    "src/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/adaptive.py": "e3f50db93e648606083861172657c6d8d91bae9f0380d73db21570f9a1b408ee",
+    "src/error_indicators.py": "2cf2712ed4d399577170b754a165c9b8cdfea95aa0c8e3ca8a10dd8de64df11b",
+    "src/fem.py": "d191b90c2806d0b3590d6c4043bbb56ad42d1458c4e318036f1f2df42ef3a395",
+    "src/fem_p2.py": "de5c10de7926bded069e0412609ab419e2557d0a6ae19cf1435d8bb17cefcc91",
+    "src/multiplier_l2_transfer.py": "dd3888bd3e4631718462831acb6b1af86243cf842434d7fc41a54b6e83084322",
+    "src/p1_nested_large.py": "55867070b1a17431c65a3338252b540549422d4eb2c88f9e26671de8ccfea120",
+    "src/p2_nested_large.py": "6ff091425cf68093ecb78fc715d815f143b69c2810de97fa1636dcbb002a4da9",
+    "src/pdas_indicator.py": "5aa3eb9355af7b001967c21e7f05fc17c78103a18eec214ef66d3bbe961bbf83",
+    "src/problem.py": "7bddb50f70ba8f818f33603ed5b5cdf6046544af1d111bd9b1e57361071410f9",
+    "src/solver.py": "892ff2719e95f15fb92e08fa39b91ab3a233f0cc1d2035e92af644218d3eed82"
+  }
+}

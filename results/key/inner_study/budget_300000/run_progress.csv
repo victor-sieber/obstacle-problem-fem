@@ -1,0 +1,2 @@
+case,degree,method,dofs,eta,h1_error,min_h,mesh_stop,meshes,inner_relative_exits,relative_exits_before_stability,min_element_gap,scaled_free_residual
+sine_dirac,1,uniform,163839,0.0041176594119973625,0.002604156412629133,6.103515624911182e-06,dof_cap,14,0,0,0.0,1.597254983209603e-16

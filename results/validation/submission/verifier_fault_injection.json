@@ -1,0 +1,14 @@
+[
+  {
+    "case": "NaN true error",
+    "rejected": true
+  },
+  {
+    "case": "inconsistent inner ratio",
+    "rejected": true
+  },
+  {
+    "case": "stricter per-series width",
+    "rejected": true
+  }
+]
