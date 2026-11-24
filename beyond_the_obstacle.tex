@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-% Working mathematical draft for the Numerical Practicum, UZH.
+% English handout. Compile with pdfLaTeX twice for cross-references.
 % Compile from the repository root containing figures/.
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -7,7 +7,6 @@
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb,mathtools}
 \usepackage{graphicx,booktabs,geometry,microtype,xcolor}
-\usepackage{algorithm,algpseudocode}
 \usepackage{pdflscape,caption,needspace,placeins,float}
 \usepackage{hyperref}
 \geometry{left=25mm,right=25mm,top=23mm,bottom=24mm}
@@ -30,40 +29,79 @@
 \newcommand{\sect}[1]{\Needspace{7\baselineskip}\section{#1}}
 \newcommand{\subsect}[1]{\Needspace{5\baselineskip}\subsection{#1}}
 \DeclareMathOperator*{\argmin}{arg\,min}
-\algrenewcommand{\algorithmicrequire}{\textbf{Input:}}
-\algrenewcommand{\algorithmicensure}{\textbf{Output:}}
+\floatstyle{ruled}
+\newfloat{algorithm}{htbp}{loa}
+\floatname{algorithm}{Algorithm}
 \title{\vspace{-1.5cm}\textbf{Beyond the Obstacle}\\[5pt]
 \large Adaptive Finite Elements and Nested Primal--Dual Active Sets}
 \author{Victor Sieber\\\small Bachelor's student in Mathematics\\\small Numerical Practicum, University of Zurich}
-\date{Last edited: \today}
+\date{23 November 2026}
 \begin{document}
 \maketitle
 \vspace{-0.35cm}
-\phantomsection
-\section*{Abstract}
-\addcontentsline{toc}{section}{Abstract}
-% Intentionally blank until the project is finalized.
-\vspace{0.45cm}
+\setcounter{tocdepth}{1}
 \tableofcontents
-\vspace{0.1cm}
+
+\section*{Questions for the numerical study}
+\begin{enumerate}
+ \item For a given number of unknowns, how accurately do linear and quadratic elements approximate the solution on uniform and adaptive meshes? How does the answer change when the load includes point forces? (Section~\ref{sec:conv})
+ \item After refining the mesh, how many contact iterations do we save by transferring the coarse solution? Does transferring the support force as well give a better start? (Section~\ref{sec:exp-nested})
+ \item On a fixed mesh, can the refinement indicator also tell us when to stop the contact iteration early? (Section~\ref{sec:limits})
+\end{enumerate}
+\clearpage
 
 \sect{The obstacle problem}\label{sec:problem}
-We model a string on $(0,1)$, fixed at its endpoints, under a load $f$. Its displacement $u$ must remain above an obstacle $\psi$. Set
-\[
- V=H_0^1(0,1),\qquad K=\{v\in V:v\geq\psi\text{ a.e. on }(0,1)\}.
-\]
-Here $H_0^1(0,1)$ consists of functions with a square-integrable weak derivative and zero endpoint values. We choose obstacles with $\psi(0),\psi(1)\leq0$, so that $K$ is nonempty. Moreover, $K$ is convex: for $v,w\in K$ and $t\in[0,1]$,
-\[
- tv+(1-t)w\ \geq\ t\psi+(1-t)\psi=\psi.
-\]
-The elastic energy and external work give
-\[
- J(v)=\frac12\int_0^1|v'(x)|^2\,dx-\ip{f}{v},
- \qquad u=\argmin_{v\in K}J(v).
-\]
-If $f$ is a function, $\ip{f}{v}=\int_0^1 fv\,dx$. In one dimension, we may also use point forces: $\ip{\delta_\xi}{v}=v(\xi)$ for $\xi\in(0,1)$.
+Imagine an elastic string fixed at both ends above a rigid shelf. Under a light load, the string bends down. Under a heavier load its middle can come to rest on the shelf. We know the load and the shelf height. What we have to find is both the shape of the string and the part of the shelf that supports it. This is what makes contact problems interesting: even the region where a force acts is part of the answer.
 
-\textbf{Deriving the variational inequality.} For any $v\in K$, convexity gives $u+t(v-u)\in K$ when $0\leq t\leq1$. Since $u$ minimizes $J$, the right derivative satisfies
+\begin{center}
+\setlength{\unitlength}{1pt}
+\begin{picture}(322,133)%
+\thinlines%
+\put(22,78){\vector(1,0){282}}\put(309,74){$x$}%
+\put(34,10){\vector(0,1){110}}\put(18,116){$y$}%
+\put(15,82){\small $0$}%
+\put(284,75){\line(0,1){6}}\put(280,85){\small $1$}%
+\put(112,77){\line(0,1){4}}\put(109,83){\small $a$}%
+\put(206,77){\line(0,1){4}}\put(203,83){\small $b$}%
+{\color{gray}\multiput(112,47)(0,5){6}{\line(0,1){2}}\multiput(206,47)(0,5){6}{\line(0,1){2}}}%
+{\color{teal!65!black}\put(34,41){\rule{250pt}{1.6pt}}\put(289,38){$\psi$}}%
+\thicklines\qbezier(34,78)(72,43)(112,43)%
+\put(112,43){\line(1,0){94}}\qbezier(206,43)(245,43)(284,78)%
+\put(34,78){\circle*{4}}\put(284,78){\circle*{4}}%
+\put(112,43){\circle*{3}}\put(206,43){\circle*{3}}%
+\put(262,51){$u$}%
+{\color{blue!60!black}\multiput(67,104)(46,0){5}{\vector(0,-1){14}}%
+\put(64,110){\makebox(190,10){\small downward load $f<0$}}}%
+{\color{teal!75!black}\multiput(130,23)(29,0){3}{\vector(0,1){15}}%
+\put(79,6){\makebox(160,12){\small upward support force $\lambda$}}}%
+\end{picture}
+
+\small The $x$-axis passes through the fixed ends $(0,0)$ and $(1,0)$; $y$ measures vertical displacement.
+Between $a$ and $b$ the gap $u-\psi$ is zero. On $(0,a)$ and $(b,1)$ the support force $\lambda$ is zero.
+\end{center}
+
+The shelf can push up only where the string touches it. Thus at each position either the gap or the supporting force is zero (at a transition both can be zero). This simple rule is called \emph{complementarity}. It will give us a test for deciding which points to hold fixed and which to release. Once we can find contact on one grid, we will ask where to add points and how much of that first solution we can reuse.
+
+\textbf{From the picture to an energy.} Let $x$ run from 0 to 1,
+$u(x)$ be the vertical displacement, and $\psi(x)$ the height of the obstacle.
+On $I=(0,1)$ the energy space is
+\[
+ H^1(I)=\{v\in L^2(I):v'\in L^2(I)\},\qquad
+ V=H^1_0(I)=\{v\in H^1(I):v(0)=v(1)=0\}.
+\]
+Here $v'$ is the weak derivative: $\int_I v\phi'\,dx=-\int_I v'\phi\,dx$ for every smooth $\phi$ supported strictly inside $I$. In one dimension each $H^1$ function has a continuous representative, which gives meaning to its endpoint values and to $v(x)$ at a point load. For our continuous obstacles the admissible shapes are exactly
+\[
+ K=\{v\in V:v(x)\geq\psi(x)\text{ for every }x\in[0,1]\}.
+\]
+Both obstacles lie at or below zero, so the straight string $v=0$ belongs to $K$. If $v,w\in K$ and $0\le t\le1$, their weighted average also belongs to $K$: at every $x$ its height is at least $(1-t)\psi(x)+t\psi(x)=\psi(x)$, and its ends are still fixed. This is what convexity means here.
+
+Steep slopes cost elastic energy. Moving in the direction of the load allows the load to do work. With unit tension, the equilibrium minimizes the energy
+\[
+ J(v)=\tfrac12\int_0^1|v'(x)|^2\,dx-\ip{f}{v},\qquad u=\argmin_{v\in K}J(v).
+\]
+For a distributed load, $\ip{f}{v}=\int_0^1fv\,dx$. A unit force concentrated at $\xi$ instead contributes $\ip{\delta_\xi}{v}=v(\xi)$: only the displacement at its point of application enters the work.
+
+\textbf{Deriving the variational inequality.} For any $v\in K$, convexity gives $u+t(v-u)\in K$ when $0\leq t\leq1$. Start at $u$ and move a fraction $t>0$ of the way towards $v$. Since $u$ minimizes the energy, $[J(u+t(v-u))-J(u)]/t\geq0$. Taking $t\downarrow0$ gives
 \[
  0\leq\left.\frac{d}{dt}J(u+t(v-u))\right|_{t=0}
  =\int_0^1 u'(v-u)'\,dx-\ip{f}{v-u}.
@@ -72,31 +110,48 @@ Consequently, the weak obstacle problem is to find $u\in K$ such that
 \begin{equation}\label{eq:VI}
  \boxed{\int_0^1u'(v-u)'\,dx\geq\ip{f}{v-u}\qquad\text{for every }v\in K.}
 \end{equation}
-We write $a(w,v)=\int_0^1 w'v'\,dx$. The \emph{Poincar\'e inequality}
-\[
- \|v\|_{L^2(0,1)}\leq\frac1\pi\|v'\|_{L^2(0,1)}\qquad(v\in H_0^1(0,1))
-\]
-shows that the derivative seminorm controls the full $H^1$ norm. Hence $J$ is strictly convex on $V$ and the minimizer is unique.
+\textbf{Why there is one equilibrium.} Because the ends are fixed, the Poincar\'e inequality bounds the size of a displacement by the size of its slope. Write $s=\|v'\|_{L^2}$. For the loads here the work is bounded by $Cs$, while the elastic energy is $s^2/2$. Thus $J(v)\geq s^2/2-Cs$ grows without bound for very large $s$. This is \emph{coercivity}: a sequence seeking the lowest energy must stay bounded. In this Hilbert space, a bounded minimizing sequence has a weakly convergent subsequence. The closed convex set $K$ contains that limit, and the energy at the limit is at most the limiting energy. The limit is a minimizer. Strict convexity means that averaging two different minimizers would lower the energy, so there can be only one.
 
-\textbf{Contact and reaction.} At a point where $u>\psi$, small upward and downward variations are allowed, so the weak inequality becomes equality locally: $-u''=f$. On contact ($u=\psi$), only upward variations remain admissible. Their effect can be represented by a nonnegative \emph{reaction} $\lambda=-u''-f$. Thus, whenever these quantities are functions, we obtain
+\textbf{Getting the contact law from \eqref{eq:VI}.} Take a smooth nonnegative test displacement $w$ supported inside $(0,1)$. Lifting the string to $v=u+tw$ is allowed for $t>0$. Substituting in \eqref{eq:VI} and dividing by $t$ gives
 \[
- \underbrace{-u''=f+\lambda}_{\text{equilibrium}},\qquad
- \underbrace{u-\psi\geq0}_{\text{no penetration}},\qquad
- \underbrace{\lambda\geq0}_{\text{reaction}},\qquad
- \underbrace{\lambda(u-\psi)=0}_{\text{complementarity}}.
+ \underbrace{\int_0^1 u'w'\,dx-\ip{f}{w}}_{\ip{\lambda}{w}}\geq0.
 \]
-On the \emph{free region} $u>\psi$, the reaction vanishes; on the \emph{contact region} $u=\psi$, the obstacle may exert a positive reaction. For point forces, the equilibrium equation is understood in the sense of distributions.
+This excess over the applied load is the supporting force. On an open piece where there is a gap, we may also lower the string a little on the support of $w$. Using $v=u-tw$ reverses the inequality, so the excess there is zero. For any test displacement $w\in V$, define $\ip{\lambda}{w}=a(u,w)-\ip{f}{w}$, where $a(u,w)=\int_0^1u'w'\,dx$. This gives the weak force balance $a(u,w)=\ip{f+\lambda}{w}$.
+
+To see where the second derivative enters, first suppose $u$ is smooth on an interval $(c,d)$. Choose a smooth test function $w$ supported strictly inside it. Integrating $(u'w)'=u''w+u'w'$ gives
+\[
+ \int_c^d u'w'\,dx
+ =\underbrace{[u'w]_c^d}_{0\text{ since }w(c)=w(d)=0}
+  -\int_c^d u''w\,dx .
+\]
+If $f$ and $\lambda$ have densities there, the force balance gives $\int_c^d(-u''-f-\lambda)w\,dx=0$ for every such $w$. Hence $-u''=f+\lambda$ almost everywhere on that interval. Together with the contact law this reads
+\[
+ -u''=f+\lambda,\qquad u-\psi\geq0,\qquad \lambda\geq0,\qquad \lambda(u-\psi)=0 .
+\]
+At a point force the slope can jump. The same balance still holds in the weak sense: $\ip{-u''}{w}=\int_0^1 u'w'\,dx$ for every smooth test function supported inside $(0,1)$. The contact law tells us which equation to solve: on a free piece use $-u''=f$; on a supported piece fix $u=\psi$ and determine the reaction needed to hold it there.
+
+For further reading, Kikuchi and Oden connect this one-sided support law to
+variational inequalities for elastic contact \cite[Ch.~2]{contact}.
 
 \sect{Finite-element discretization}\label{sec:fem}
 \subsect{Meshes and the P1 and P2 bases}
-Divide $[0,1]$ into $M$ elements
+The unknown function $u(x)$ gives the vertical displacement of the string at position $x$. For example, $u(x_i)=-0.1$ means that the string at $x_i$ is $0.1$ units below its original position. We approximate the shape using values at a finite set of nodes. On each interval a straight line is determined by its two endpoint values. A quadratic also uses the value at the midpoint, so it can bend within the interval.
+Both constructions use the same
+mesh (see also Braess \cite[Ch.~II]{braess}). Divide $[0,1]$ into $M$ elements
 \[
  0=x_0<x_1<\cdots<x_M=1,\qquad T_i=[x_i,x_{i+1}],\quad h_i=x_{i+1}-x_i.
 \]
 Let $V_h\subset V$ contain continuous functions that are polynomial on each element and vanish at the two endpoints.
 
 \textbf{$P_1$: one hat function per interior vertex.}
-For each interior node $x_i$, define the \emph{global} nodal basis function
+Joining adjacent heights by straight lines gives the space
+\[
+ V_h^{P_1}=\{v_h\in C^0([0,1]):v_h|_{T_j}\in\mathbb P_1
+ \text{ for every }j,\quad v_h(0)=v_h(1)=0\}.
+\]
+Here $\mathbb P_k$ denotes polynomials of degree at most $k$.
+Raising one interior height to one while keeping all other heights zero
+produces a hat. For each interior node $x_i$, define the \emph{global} nodal basis function
 \[
  \varphi_i(x)=
  \begin{cases}
@@ -105,7 +160,23 @@ For each interior node $x_i$, define the \emph{global} nodal basis function
  0,&\text{otherwise}.
  \end{cases}
 \]
-Thus $\varphi_i(x_j)=\delta_{ij}$, and
+
+\begin{center}
+\setlength{\unitlength}{1pt}
+\begin{picture}(298,83)%
+\put(10,20){\vector(1,0){274}}\put(286,16){$x$}%
+\thicklines%
+{\color{teal!65!black}\put(24,20){\line(2,1){60}}\put(84,50){\line(2,-1){60}}}%
+{\color{blue!70!black}\put(84,20){\line(2,1){60}}\put(144,50){\line(2,-1){60}}}%
+{\color{purple!75!black}\put(144,20){\line(2,1){60}}\put(204,50){\line(2,-1){60}}}%
+\put(64,59){\makebox(40,12){$\varphi_{i-1}$}}\put(124,59){\makebox(40,12){$\varphi_i$}}\put(184,59){\makebox(40,12){$\varphi_{i+1}$}}%
+\multiput(24,18)(60,0){5}{\line(0,1){4}}%
+\put(4,2){\makebox(40,11){$x_{i-2}$}}\put(64,2){\makebox(40,11){$x_{i-1}$}}\put(124,2){\makebox(40,11){$x_i$}}\put(184,2){\makebox(40,11){$x_{i+1}$}}\put(244,2){\makebox(40,11){$x_{i+2}$}}%
+\end{picture}
+
+\small Three neighbouring basis functions on an evenly spaced grid. Each hat has value one at its own node and zero at every other node.
+\end{center}
+There are $M$ intervals and $M+1$ vertices. The two endpoint heights are fixed, leaving $N=M-1$ unknown heights, or \emph{degrees of freedom}. Each hat is one at its own node and zero at all others, so
 \[
  u_h(x)=\sum_{i=1}^{M-1}U_i\varphi_i(x),\qquad U_i=u_h(x_i),\qquad N=M-1.
 \]
@@ -114,26 +185,82 @@ On an element $T_i$, only the two neighbouring hats contribute. With $s=(x-x_i)/
  u_h|_{T_i}(x)=U_i(1-s)+U_{i+1}s.
 \]
 
-\textbf{$P_2$: adding one midpoint to each element.}
-We use the reference interval $\widehat T=[-1,1]$ with nodes $-1,0,1$, mapped to $T_i$ by
-\[
- x=\frac{x_i+x_{i+1}}2+\frac{h_i}2y,\qquad y\in[-1,1].
-\]
-Construct the quadratic nodal functions as \emph{Lagrange polynomials}: each is one at its own reference node and zero at the other two. For example,
-\[
- \widehat\varphi_L(y)=\frac{(y-0)(y-1)}{(-1-0)(-1-1)}=\frac12y(y-1).
-\]
-Analogously,
-\[
- \widehat\varphi_M(y)=1-y^2,\qquad
- \widehat\varphi_R(y)=\frac12y(y+1).
-\]
-The local quadratic is $u_h|_{T_i}=U_i\widehat\varphi_L+U_{m_i}\widehat\varphi_M+U_{i+1}\widehat\varphi_R$, where $m_i=(x_i+x_{i+1})/2$. There are $M-1$ interior vertices and $M$ midpoints, hence $N=2M-1$ interior degrees of freedom.
+\begin{center}
+\setlength{\unitlength}{1pt}
+\begin{picture}(310,70)%
+\put(10,55){\makebox(120,12){$P_1$: two heights}}%
+\put(180,55){\makebox(120,12){$P_2$: three heights}}%
+\thicklines%
+\put(10,44){\line(1,0){120}}%
+\qbezier(180,44)(240,-12)(300,44)%
+\put(10,44){\circle*{4}}\put(130,44){\circle*{4}}%
+\put(180,44){\circle*{4}}\put(240,16){\circle*{4}}\put(300,44){\circle*{4}}%
+\put(0,0){\makebox(20,10){$x_j$}}\put(117,0){\makebox(26,10){$x_{j+1}$}}%
+\put(170,0){\makebox(20,10){$x_j$}}\put(228,0){\makebox(24,10){$m_j$}}%
+\put(287,0){\makebox(26,10){$x_{j+1}$}}%
+\end{picture}
 
-\textit{Non-aligned mesh example.} For $M=20$ equal elements, $\alpha=1/3$ lies strictly inside $[0.30,0.35]$, not at the $P_1$ vertices or the $P_2$ midpoint $0.325$. Thus a free boundary or derivative jump need not be represented by a node. We will use this feature in the benchmark problems of Section~\ref{sec:benchmarks}.
+\small With equal endpoint heights the linear segment is flat.
+A lower midpoint lets the quadratic segment bend within the same interval.
+\end{center}
+
+\textbf{$P_2$: adding one midpoint to each element.}
+With one more height per interval, the straight-line interpolant becomes a quadratic interpolant. The corresponding space is
+\[
+ V_h^{P_2}=\{v_h\in C^0([0,1]):v_h|_{T_j}\in\mathbb P_2,
+ \ v_h(0)=v_h(1)=0\}.
+\]
+On the reference element $\widehat T=[0,1]$, choose
+$y_0=0$, $y_1=\tfrac12$, $y_2=1$. The Lagrange formula gives
+\[
+ \widehat\varphi_r(y)=\prod_{\substack{s=0\\s\neq r}}^2
+ \frac{y-y_s}{y_r-y_s},\qquad
+ \widehat\varphi_r(y_s)=\delta_{rs}.
+\]
+Thus the three basis functions and their derivatives are
+\[
+ \begin{aligned}
+ \widehat\varphi_0(y)
+ &=\frac{y-\tfrac12}{-\tfrac12}\frac{y-1}{-1}
+ =2(y-\tfrac12)(y-1),
+ &\widehat\varphi_0'(y)&=4y-3,\\[4pt]
+ \widehat\varphi_1(y)
+ &=\frac{y}{\tfrac12}\frac{y-1}{-\tfrac12}
+ =4y(1-y),
+ &\widehat\varphi_1'(y)&=4-8y,\\[4pt]
+ \widehat\varphi_2(y)
+ &=\frac{y}{1}\frac{y-\tfrac12}{\tfrac12}
+ =2y(y-\tfrac12),
+ &\widehat\varphi_2'(y)&=4y-1.
+ \end{aligned}
+\]
+For $T_j=[x_j,x_{j+1}]$ with $h_j=x_{j+1}-x_j$, set
+\[
+ y=\frac{x-x_j}{h_j},\qquad \frac{dy}{dx}=\frac1{h_j},\qquad
+ v_{j,r}(x)=\widehat\varphi_r\!\left(\frac{x-x_j}{h_j}\right),
+ \quad r=0,1,2.
+\]
+Substituting the reference functions and differentiating gives
+\[
+\begin{aligned}
+ v_{j,0}(x)&=2\left(\frac{x-x_j}{h_j}-\frac12\right)
+                  \left(\frac{x-x_j}{h_j}-1\right),
+ &v_{j,0}'(x)&=\frac1{h_j}\left(4\frac{x-x_j}{h_j}-3\right),\\[8pt]
+ v_{j,1}(x)&=4\frac{x-x_j}{h_j}\left(1-\frac{x-x_j}{h_j}\right),
+ &v_{j,1}'(x)&=\frac1{h_j}\left(4-8\frac{x-x_j}{h_j}\right),\\[8pt]
+ v_{j,2}(x)&=2\frac{x-x_j}{h_j}\left(\frac{x-x_j}{h_j}-\frac12\right),
+ &v_{j,2}'(x)&=\frac1{h_j}\left(4\frac{x-x_j}{h_j}-1\right).
+\end{aligned}
+\]
+The local indices $0,1,2$ correspond to $x_j,m_j,x_{j+1}$, where
+$m_j=(x_j+x_{j+1})/2$; there are $N=2M-1$ interior degrees of freedom.
+
+
 
 \subsect{Stiffness matrix and constrained quadratic minimization}
-Writing $u_h=\sum_{j=1}^N U_j\varphi_j$ in the energy gives
+The nodal heights are now our unknowns. The stiffness matrix records how
+changing two heights affects the elastic energy, and the load vector records
+the work done by the load for each basis displacement. Writing $u_h=\sum_{j=1}^N U_j\varphi_j$ in the energy gives
 \[
  J_h(U)=\frac12U^TAU-F^TU,\qquad
  A_{ij}=\int_0^1\varphi_i'\varphi_j'\,dx,\quad F_i=\ip{f}{\varphi_i}.
@@ -148,61 +275,86 @@ with all other entries zero. In particular, on a uniform mesh of width $h$,
 \[
  A_{P_1}=\frac1h
  \begin{pmatrix}
- 2&-1&0&\cdots&0\\
- -1&2&-1&\ddots&\vdots\\
- 0&-1&\ddots&\ddots&0\\
- \vdots&\ddots&\ddots&2&-1\\
- 0&\cdots&0&-1&2
+ 2&-1& & &0\\
+ -1&2&-1& & \\
+ &\ddots&\ddots&\ddots& \\
+ & &-1&2&-1\\
+ 0& & &-1&2
  \end{pmatrix}.
 \]
-For $P_2$, the chain rule gives $d/dx=(2/h_i)d/dy$, while $dx=(h_i/2)dy$. Therefore,
+\textbf{$P_2$: first compute one element matrix.}
+On $T_j=[x_j,x_{j+1}]$, take the local node order $(x_j,m_j,x_{j+1})$ from Section~2.1. With $y=(x-x_j)/h_j$, each derivative contributes a factor $1/h_j$ and $dx=h_j\,dy$. Thus
 \[
- (A^{P_2}_{T_i})_{rs}=\frac2{h_i}\int_{-1}^1\widehat\varphi_r'(y)\widehat\varphi_s'(y)\,dy,
- \qquad r,s\in\{L,M,R\}.
+ A^{(j)}_{rs}=\int_{T_j}v_{j,r}'(x)v_{j,s}'(x)\,dx
+ =\frac1{h_j}\int_0^1\widehat\varphi_r'(y)\widehat\varphi_s'(y)\,dy,
+ \qquad r,s\in\{0,1,2\}.
 \]
-As $\widehat\varphi_L'=y-\tfrac12$, the $(L,L)$ entry is $(2/h_i)\int_{-1}^1(y-\tfrac12)^2dy=7/(3h_i)$. The neighbouring left--midpoint entry is
+For example, the midpoint couples to itself and to the left endpoint through
 \[
- (A_{T_i}^{P_2})_{LM}=\frac{2}{h_i}\int_{-1}^1
- (y-\tfrac12)(-2y)\,dy=-\frac8{3h_i}.
+ \begin{aligned}
+ h_j A^{(j)}_{11}&=\int_0^1(4-8y)^2\,dy
+     =16-32+64/3=16/3,\\
+ h_j A^{(j)}_{01}&=\int_0^1(4y-3)(4-8y)\,dy
+     =-32/3+20-12=-8/3 .
+ \end{aligned}
 \]
-Similarly, the remaining entries give
+Using the same integral for the remaining pairs gives the whole block:
 \[
- A^{P_2}_{T_i}=\frac1{3h_i}
+ A^{(j)}=\frac1{3h_j}
  \begin{pmatrix}7&-8&1\\-8&16&-8\\1&-8&7\end{pmatrix}.
 \]
-\textbf{From local to global ($P_2$).} Each element has three unknown values,
-ordered as \emph{left vertex, midpoint, right vertex}:
-\[
- \underbrace{(x_i,m_i,x_{i+1})}_{\text{element }T_i}
- \quad\longleftrightarrow\quad
- \underbrace{(2i,\,2i+1,\,2i+2)}_{\text{global positions}}.
-\]
-Place its $3\times3$ matrix into these rows and columns of the global
-matrix \(\widetilde A\). Where two elements meet, \emph{add} their contributions.
-For example, the interior vertex $x_i$ belongs to $T_{i-1}$ and $T_i$, so
-\[
- \widetilde A_{2i,2i}=\frac{7}{3h_{i-1}}+\frac{7}{3h_i}.
-\]
-Thus $\widetilde A\in\R^{(2M+1)\times(2M+1)}$. Since
-$u_h(0)=u_h(1)=0$, remove its first and last rows and columns:
-\[
- \boxed{A\in\R^{(2M-1)\times(2M-1)}}.
-\]
-The same ``add at shared nodes'' rule was used for the $P_1$ matrix above.
 
-The same assembly principle applies to $P_1$. For either degree, $A$ is symmetric and
+\textbf{From local to global indices.}
+Number vertices and midpoints alternately from the left. Each new element starts two indices further along:
+\[
+ \begin{array}{c|ccc}
+ &\text{left }(r=0)&\text{midpoint }(r=1)&\text{right }(r=2)\\ \hline
+ T_0 &0&1&\mathbf{2}\\
+ T_1 &\mathbf{2}&3&4\\
+ T_j &2j&2j+1&2j+2
+ \end{array}
+\]
+To assemble, add each local entry $A^{(j)}_{rs}$ to global row $2j+r$ and column $2j+s$. In a single formula, the matrix including the endpoints is
+\[
+ \boxed{\displaystyle
+ \widetilde A_{pq}
+ =\sum_{j=0}^{M-1}\sum_{r=0}^{2}\sum_{s=0}^{2}
+ A^{(j)}_{rs}\,\mathbf 1_{\{2j+r=p\}}\,\mathbf 1_{\{2j+s=q\}},}
+ \qquad 0\le p,q\le 2M .
+\]
+Each indicator is one when its index matches and zero otherwise. For example, global node $2$ is the right endpoint of $T_0$ and the left endpoint of $T_1$. For equal element lengths $h$, its diagonal entry is
+\[
+ \widetilde A_{22}
+ =\underbrace{A^{(0)}_{22}}_{\text{local node 2 on }T_0}
+ +\underbrace{A^{(1)}_{00}}_{\text{local node 0 on }T_1}
+ =\frac{7+7}{3h}=\frac{14}{3h}.
+\]
+For three equal elements the two fixed endpoints have indices $0$ and $6$.
+Keeping rows and columns $1,\ldots,5$ gives the matrix for the unknowns $(m_0,x_1,m_1,x_2,m_2)$:
+\[
+ A
+ =\frac1{3h}\begin{pmatrix}
+ 16&-8&0&0&0\\
+ -8&14&-8&1&0\\
+ 0&-8&16&-8&0\\
+ 0&1&-8&14&-8\\
+ 0&0&0&-8&16
+ \end{pmatrix}.
+\]
+On a nonuniform mesh the index rule is identical. Each block already contains its own factor $1/(3h_j)$.
+
+For either degree, $A$ is symmetric and
 \[
  c^TAc=\int_0^1\left|\left(\sum_{j=1}^N c_j\varphi_j\right)'\right|^2dx>0
- \quad\text{whenever }c\neq0,
+ \quad\text{whenever }c\neq0.
 \]
-since a function in $H_0^1(0,1)$ with zero derivative must be zero.
-Thus $A$ is positive definite. Let $z_i$ denote the interior $P_1$ vertices or $P_2$ vertices/midpoints and set $Z_i=\psi(z_i)$. We solve
+Indeed, a zero integral would force the finite-element function to have zero slope on every interval. Continuity would make it constant throughout, and the fixed ends would make that constant zero. All its nodal coefficients would then vanish. Thus $A$ is positive definite. This ensures that the discrete energy has a unique minimizer, and that fixing a guessed contact set leaves a uniquely solvable system for the free heights. Let $z_i$ denote the interior $P_1$ vertices or $P_2$ vertices/midpoints and set $Z_i=\psi(z_i)$. We solve
 \begin{equation}\label{eq:discrete}
  \boxed{\min_{U\in\R^N,\ U\geq Z}\bigl(\tfrac12U^TAU-F^TU\bigr).}
 \end{equation}
-Here $U\geq Z$ is imposed at the degrees of freedom. For $P_1$ it implies $u_h\geq I_h\psi$; for $P_2$, nodal feasibility alone need not imply pointwise feasibility between the nodes.
+The inequality is checked at every unknown height. Between two nodes a straight segment stays above the straight line joining the obstacle heights. For $P_2$, a quadratic can dip below the interpolated obstacle between its nodes. This happened on some coarse meshes, even when every nodal height satisfied its bound.
 
-\textbf{Discrete KKT conditions.} Differentiate the discrete energy:
+\textbf{Contact at the nodes.} The Karush--Kuhn--Tucker (KKT) conditions are the discrete version of the gap and force rules. Differentiating the energy gives the force associated with each nodal displacement,
 \[
  \nabla J_h(U)=AU-F=: \Lambda.
 \]
@@ -211,68 +363,57 @@ If $U_i>Z_i$, we can vary $U_i$ slightly in either direction, hence $\Lambda_i=0
  \boxed{\Lambda=AU-F,\qquad U-Z\geq0,\qquad
  \Lambda\geq0,\qquad\Lambda_i(U_i-Z_i)=0\ \ (i=1,\ldots,N).}
 \end{equation}
-The vector $\Lambda$ is the \emph{dual residual}; it is not yet the nodal values of a multiplier function. In the Dirac example $f=f_{\rm reg}-2\delta_{\alpha}-\delta_{\beta}$, and the load vector is assembled as
+Each entry $\Lambda_i$ measures the reaction tested against one basis function. Section~\ref{sec:multiplier} explains how to recover a force density on the intervals. In the sine--Dirac example $f=f_{\rm reg}-2\delta_{\alpha}-\delta_{\beta}$, and the load vector is assembled as
 \[
  F_i=\int_0^1f_{\rm reg}\varphi_i\,dx-2\varphi_i(\alpha)-\varphi_i(\beta).
 \]
-Even when $\alpha,\beta$ are not nodes, the basis values at those points are well-defined.
+
 
 \sect{The primal--dual active-set method}\label{sec:pdas}
-At each degree of freedom, the KKT system \eqref{eq:KKT} says that either
-$U_i=Z_i$ (\emph{active/contact}) or $\Lambda_i=0$ (\emph{free}).
-For any $c>0$, the four KKT conditions are equivalent to
+If we knew the contact nodes in advance, we could fix their heights at the
+obstacle and solve linear equations for all remaining heights. What happens if
+we guess wrong? A free node below the obstacle must be brought back into contact.
+At a node held against the obstacle, a negative reaction would require the obstacle
+to pull the string, so that node must be released. The following test makes both
+decisions using the same gap and reaction as in the string picture.
+
+Write $g_i=U_i-Z_i$ for the gap. After solving with a guessed contact set, each held node has $g_i=0$ and each free node has $\Lambda_i=0$. This makes the next decision particularly simple. For a held node we ask whether the obstacle pushes up ($\Lambda_i>0$). For a free node we ask whether it fell below the obstacle ($g_i<0$). Both questions fit one test:
 \[
- \boxed{\Lambda_i=\max\{0,\Lambda_i-c(U_i-Z_i)\}.}
+ i\text{ is held in the next solve}\quad\Longleftrightarrow\quad \Lambda_i-cg_i>0,\qquad c>0 .
 \]
-\emph{Why?} Put $g_i=U_i-Z_i$. If $g_i>0$, KKT gives $\Lambda_i=0$,
-so the right-hand side is $\max(0,-cg_i)=0$. If $g_i=0$, KKT gives
-$\Lambda_i\geq0$, so the right-hand side is $\Lambda_i$.
-Conversely, the maximum identity implies $\Lambda_i\geq0$;
-if $\Lambda_i>0$ then $g_i=0$, while if $\Lambda_i=0$ then $g_i\geq0$.
-Thus the identity also implies KKT.
+For example, take $c=1$ as in the code. If a free node lies $0.02$ below the obstacle, the test gives $0-(-0.02)>0$ and the next solve holds it. If a held node needs a force of $-0.03$, the test gives $-0.03-0<0$ and the next solve releases it. At zero gap and zero force the strict test labels the node free. Hinterm\"uller, Ito and Kunisch give the connection between this update and Newton's method \cite{hintermuller}.
 
-This motivates the test
-$\Lambda_i-c(U_i-Z_i)>0$ for an active degree of freedom.
-We use $c=1$.
 \begin{algorithm}[H]
-\caption{Primal--dual active-set (PDAS) method}\label{alg:pdas}
-\begin{algorithmic}[1]
-\Require $A,F,Z$, parameter $c>0$, initial contact set $\mathcal C^0$
-\For{$k=0,1,2,\ldots$}
- \State $\mathcal F^k\gets\{1,\ldots,N\}\setminus\mathcal C^k$ \Comment{free indices}
- \State $U_{\mathcal C^k}\gets Z_{\mathcal C^k}$ \Comment{enforce contact}
- \State Solve $A_{\mathcal F^k\mathcal F^k}U_{\mathcal F^k}
-       =F_{\mathcal F^k}-A_{\mathcal F^k\mathcal C^k}Z_{\mathcal C^k}$
- \State $\Lambda\gets AU-F$
- \State $\mathcal C^{k+1}\gets\{i:\Lambda_i-c(U_i-Z_i)>0\}$
- \If{$\mathcal C^{k+1}=\mathcal C^k$ \textbf{and} the KKT residual is within tolerance}
-   \State \Return $(U,\Lambda)$
- \EndIf
-\EndFor
-\end{algorithmic}
+\caption{Primal--dual active-set (PDAS) method in exact arithmetic}\label{alg:pdas}
+\textbf{Input:} $A,F,Z$, $c>0$, initial contact set $\mathcal C^0$.
+\begin{enumerate}
+\item For $k=0,1,\ldots$, set $\mathcal F^k=\{1,\ldots,N\}\setminus\mathcal C^k$.
+\item Enforce $U_{\mathcal C^k}=Z_{\mathcal C^k}$ and solve
+\[
+ A_{\mathcal F^k\mathcal F^k}U_{\mathcal F^k}
+ =F_{\mathcal F^k}-A_{\mathcal F^k\mathcal C^k}Z_{\mathcal C^k}.
+\]
+\item Compute $\Lambda=AU-F$ and
+$\mathcal C^{k+1}=\{i:\Lambda_i-c(U_i-Z_i)>0\}$.
+\item If $\mathcal C^{k+1}=\mathcal C^k$, stop and return $(U,\Lambda)$.
+Otherwise continue with the next iteration.
+\end{enumerate}
 \end{algorithm}
-\textbf{Why is stabilization a stopping criterion?}
-Suppose $\mathcal C^{k+1}=\mathcal C^k=\mathcal C$.
-For $i\in\mathcal C$, the algorithm sets $U_i=Z_i$, and stability gives
-$\Lambda_i-c(U_i-Z_i)>0$, hence $\Lambda_i>0$.
-For $i\notin\mathcal C$, the solved free equations imply
-$\Lambda_i=(AU-F)_i=0$. Stability gives
-$\Lambda_i-c(U_i-Z_i)\leq0$, hence $U_i-Z_i\geq0$.
-In both cases $U_i-Z_i\geq0$, $\Lambda_i\geq0$, and
-$\Lambda_i(U_i-Z_i)=0$: this is precisely \eqref{eq:KKT}.
-In floating-point arithmetic we also verify KKT numerically
-(the smooth code uses a $10^{-10}$ tie tolerance and a $10^{-8}$ KKT tolerance).
+\textbf{Why does an unchanged set solve the problem?} If $\mathcal C^{k+1}=\mathcal C^k$, every held node already lies on the obstacle and has a positive reaction. Every free node already has zero reaction and lies on or above the obstacle. These are exactly the KKT conditions \eqref{eq:KKT}. Conversely, given a KKT solution, choose the held set $\{i:\Lambda_i>0\}$. Its nodes have zero gap, and all remaining nodes have zero force and nonnegative gap. Solving with this set reproduces the same heights, by uniqueness of the free-node solve. The update then returns the same set. Thus a stable set and its heights give a solution, and every solution has such a stable set.
 
-\textbf{Implementation and independent check.}
-A cold start solves $A\widetilde U=F$ and initially selects
-$\mathcal C^0=\{i:\widetilde U_i\leq Z_i\}$.
-In the Dirac tests we use a tridiagonal $P_1$ solver and $P_2$ midpoint
-elimination; the smooth test uses sparse free-set solves.
-As an independent check, we also minimized the same quadratic objective
-with SciPy's \texttt{L-BFGS-B}, using lower bounds and gradient $AU-F$
-(\href{https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html}{SciPy reference}); the measurements appear in Section~\ref{sec:experiments}.
+\textbf{Inner PDAS stopping study.} On a fixed mesh $\mathcal T_\ell$,
+an optional stopping candidate is the relative indicator reduction
+$\eta_\ell^{(k)}/\eta_\ell^{(0)}\leq10^{-3}$, where $k$ counts PDAS
+iterations, not mesh levels. We accept it only when the discrete KKT
+conditions also pass; otherwise PDAS continues to active-set stability.
+
+A cold start first solves the free-string equations $A\widetilde U=F$ and takes $\mathcal C^0=\{i:\widetilde U_i\leq Z_i\}$. Nodes where this shape reaches or passes through the obstacle are the first contact guess. As an independent check during development, the same constrained energy was also minimized with SciPy's bound-constrained optimizer.
 
 \sect{Residual-based error indicator and adaptive refinement}\label{sec:indicator}
+Suppose a point load bends the string sharply inside one interval. The contact solver can find the best straight segment on that interval, but no straight segment can have two different slopes. Cutting every interval in half would help there, at the cost of adding points to smooth stretches as well. \emph{Adaptive refinement} asks where a new node is worth that cost. It alternates two jobs: solve for contact on the current grid, then inspect the shape to choose intervals for the next grid.
+
+How can we spot a poorly resolved interval before we know the true solution? We look for two clues: a mismatch in force balance \emph{inside} the interval and an abrupt change of slope \emph{at its ends}. The indicator below assigns a number to each interval using both clues. For an introduction to choosing a mesh from a computed solution, see Verf\"urth \cite[Chs.~1--2]{verfurth}.
+
 \subsect{From jumps to an error residual}
 On a $P_1$ element $T_i$, the computed slope is constant. At an interior
 node, its jump is
@@ -331,111 +472,33 @@ For $P_1$, $u_h''|_T=0$; for $P_2$, it is constant on each element.
 The jump and volume terms are now both visible.
 
 \subsect{Reconstructing the discrete multiplier}\label{sec:multiplier}
-The PDAS output $\Lambda=AU-F$ is a vector, whereas $R_T$ requires a
-function $\lambda_h(x)$. Define the linear functional on $V_h$ by
+There is a small mismatch in what we have and what we need. PDAS gives one number $\Lambda_i$ for each basis displacement $\varphi_i$. But the interval term $R_T$ requires a force density $\lambda_h(x)$ that we can integrate. We choose the finite-element function $\lambda_h$ that does the same work as the computed reaction for every basis displacement:
 \[
- \ell_h(v_h)=a(u_h,v_h)-\langle f,v_h\rangle.
+ \int_0^1\lambda_h\varphi_i\,dx=\Lambda_i,\qquad i=1,\ldots,N.
 \]
-For a basis function, $\ell_h(\varphi_i)=(AU-F)_i=\Lambda_i$.
-Now equip the finite-dimensional space $V_h$ with the $L^2$ inner product.
-By the \emph{Riesz representation theorem}, there exists a unique
-$\lambda_h\in V_h$ such that
-\[
- (\lambda_h,v_h)_{L^2}=\ell_h(v_h)
- \qquad\text{for every }v_h\in V_h.
-\]
-This is where Riesz enters: it replaces the \emph{functional} $\ell_h$
-by a \emph{function} $\lambda_h$ representing it in the $L^2$ inner product.
-Write $\lambda_h=\sum_{j=1}^N\mu_j\varphi_j$ and test with $v_h=\varphi_i$:
-\[
- \sum_{j=1}^N\left(\int_0^1\varphi_j\varphi_i\,dx\right)\mu_j=\Lambda_i.
-\]
-With mass matrix $\mathsf M_{ij}=\int_0^1\varphi_i\varphi_j\,dx$,
+This choice is called the $L^2$-Riesz representation. Writing $\lambda_h=\sum_j\mu_j\varphi_j$ turns these equations into an ordinary linear system,
 \begin{equation}\label{eq:riesz}
- \boxed{\mathsf M\boldsymbol\mu=\Lambda.}
+ \boxed{\mathsf M\boldsymbol\mu=\Lambda,\qquad \mathsf M_{ij}=\int_0^1\varphi_i\varphi_j\,dx.}
 \end{equation}
-Importantly, the dual entries $\Lambda_i$ are \emph{not} point values
-$\lambda_h(z_i)$; solving this mass-matrix system produces the coefficient
-vector of the reconstructed function.
+The mass matrix $\mathsf M$ accounts for the overlap of neighbouring basis functions. Its solution $\mu_j$ gives the values of the reconstructed force density at the nodes. The contact sign test still uses the original entries $\Lambda_i$; reconstruction can produce negative values of $\lambda_h$.
 
 \subsect{From the residual to the implemented indicator}
-\textbf{Step 3: why subtract an interpolant?}
-The discrete equation and the reconstructed multiplier imply
-\[
- \mathcal R_h(v_h)=\langle f,v_h\rangle+(\lambda_h,v_h)-a(u_h,v_h)=0
- \qquad\text{for all }v_h\in V_h
-\]
-(for a regular load, up to numerical quadrature). However, the error
-$e=u-u_h$ is generally \emph{not} in $V_h$. Choose an averaging interpolant
-$\mathcal I_he\in V_h$, so that
-\[
- \mathcal R_h(e)=\underbrace{\mathcal R_h(\mathcal I_he)}_{=0}
-                     +\mathcal R_h(e-\mathcal I_he)
-                  =\mathcal R_h(e-\mathcal I_he).
-\]
-\emph{Idea:} subtract a local average of $e$; only its variation over each
-small element remains. This interpolant is used for the mathematical estimate,
-not by the Python algorithm.
+The grid solution already balances every test displacement that the grid can represent: by \eqref{eq:riesz}, $\mathcal R_h(v_h)=0$ for $v_h\in V_h$ (up to quadrature). Imagine approximating the unknown error by a locally averaged shape on the grid. Subtracting this shape from the error leaves the residual unchanged. Only the variation missed by the grid contributes. This observation guides the choice of weights; the computation never needs the true error.
 
-\textbf{Step 4: where do the factors $h_T$ come from?}
-For an interval $\omega$ of length $h_\omega$, write
-$\bar e_\omega=h_\omega^{-1}\int_\omega e(y)\,dy$.
-Using the fundamental theorem of calculus and Cauchy--Schwarz,
+Why does interval width matter? For two points $x,y$ in an interval $T$ of width $h_T$, the change in a displacement $e$ is the integral of its slope. Cauchy--Schwarz gives
 \[
- \begin{aligned}
- |e(x)-\bar e_\omega|
- &=\left|\frac1{h_\omega}\int_\omega(e(x)-e(y))\,dy\right|\\
- &\leq\frac1{h_\omega}\int_\omega
-             \left|\int_y^x e'(t)\,dt\right|dy
- \leq h_\omega^{1/2}\|e'\|_{L^2(\omega)}.
- \end{aligned}
+ |e(x)-e(y)|\leq \sqrt{h_T}\,\|e'\|_{L^2(T)}.
 \]
-Taking the $L^2$ norm in $x$ gives
-\[
- \|e-\bar e_\omega\|_{L^2(\omega)}
- \leq h_\omega\|e'\|_{L^2(\omega)}.
-\]
-This is the one-dimensional \emph{Poincar\'e inequality with the mean removed}.
-For a suitable patchwise averaging interpolant, analogous local estimates are
-\[
- \begin{aligned}
- \|e-\mathcal I_he\|_{L^2(T)}
- &\lesssim h_T\|e'\|_{L^2(\omega_T)},\\
- |(e-\mathcal I_he)(x_i)|
- &\lesssim h_T^{1/2}\|e'\|_{L^2(\omega_T)},
- \end{aligned}
-\]
-where $\omega_T$ consists of $T$ and its neighbours (the constants depend on
-the local mesh geometry).
+The same bound holds for the difference from the interval average. Measuring that difference in $L^2(T)$ adds another factor $\sqrt{h_T}$. This explains the two scales behind the indicator: $\sqrt{h_T}$ for a discrepancy sampled at a node and $h_T$ for one measured across the interval. Squaring gives $h_T$ for slope jumps and $h_T^2$ for the force imbalance. Each element takes a half share of its left and right jumps, $J_{T,L}$ and $J_{T,R}$. The formula implemented in the experiments is
 
-Set $w=e-\mathcal I_he$. Apply Cauchy--Schwarz separately to the
-\emph{volume} and \emph{jump} terms of $\mathcal R_h(w)$:
-\[
- \begin{aligned}
- \left|\int_T R_Tw\,dx\right|
- &\leq\|R_T\|_{L^2(T)}\|w\|_{L^2(T)}
- \lesssim\underbrace{h_T\|R_T\|_{L^2(T)}}_{\text{volume factor}}
-          \|e'\|_{L^2(\omega_T)},\\
- |J_iw(x_i)|
- &\lesssim\underbrace{h_T^{1/2}|J_i|}_{\text{jump factor}}
-          \|e'\|_{L^2(\omega_T)}.
- \end{aligned}
-\]
-Square these two residual factors. Each interior jump belongs to two
-neighbouring elements, so assign half to each. This motivates our
-\emph{implemented} indicator:
 \begin{equation}\label{eq:indicator}
  \boxed{\eta_T^2=h_T^2\|f_{\rm reg}+u_h''+\lambda_h\|_{L^2(T)}^2
  +\frac{h_T}{2}(J_{T,L}^2+J_{T,R}^2),\qquad
  \eta_h=\Bigl(\sum_{T\in\Th}\eta_T^2\Bigr)^{1/2}.}
 \end{equation}
-The volume integral uses four-point Gauss--Legendre quadrature.
-\emph{Caveat:} the exact--reconstructed multiplier difference in Step 1 has
-not been bounded here. In the Dirac benchmark the point loads enter FEM
-assembly but are not added explicitly to the indicator. Hence this is a
-motivated refinement indicator, \emph{not} a general reliability theorem.
+Here $f_{\rm reg}$ is the distributed part of the load. The point forces enter the load vector used in the solve. The indicator uses the ordinary force density in the interval integral and the slope jumps at mesh vertices. A large $\eta_T$ flags a place to refine. The error identity above also contains the difference between the true and reconstructed support forces, so this calculation alone gives no guaranteed bound on the true error.
 
-\subsect{Solve--estimate--mark--refine}
+\subsect{Solve--estimate--mark--refine}\label{sec:marking}
 With maximum marking parameter $\theta=0.5$, mark the elements satisfying
 \[
  \eta_T\geq\theta\max_{S\in\Th}\eta_S,
@@ -444,10 +507,28 @@ then bisect every marked interval at its midpoint. Repeat
 \[
  \boxed{\text{solve}\ \longrightarrow\ \text{estimate}\ \longrightarrow\ \text{mark}\ \longrightarrow\ \text{refine}}
 \]
-until $\eta_h\leq\mathrm{tol}$. This is the maximum-marking rule used in all adaptive experiments.
+until a prescribed mesh limit is reached (Section~\ref{sec:protocol}). For example, if the largest indicator is $0.8$, the rule bisects every interval with indicator at least $0.4$. Braess, Carstensen and Hoppe analyse this type of adaptive loop for a conforming obstacle discretization with a jump-based estimator \cite{adaptive}.
 
 \sect{Nested initialization of PDAS}\label{sec:nested}
-After refinement, the previous mesh solution is already a useful approximation to the new one. Instead of recomputing a cold initial guess, we transfer the coarse primal and dual information to the fine mesh.
+Refinement introduces new unknowns, but we already have a shape on the old grid. Imagine splitting one straight segment in half. We can read off a starting height for the new midpoint before solving a single equation. The old grid also tells us where the shelf was supporting the string. Can these two pieces of information save contact iterations on the finer grid?
+
+\begin{center}
+\setlength{\unitlength}{1pt}
+\begin{picture}(260,89)%
+\put(0,67){\small coarse}\put(0,17){\small fine guess}%
+\thicklines%
+{\color{blue!60!black}%
+\qbezier(78,80)(113,71)(148,62)\put(148,62){\line(1,0){96}}%
+\qbezier(78,30)(113,21)(148,12)\put(148,12){\line(1,0){96}}}%
+\multiput(78,80)(0,-50){2}{\circle*{5}}%
+\multiput(148,62)(0,-50){2}{\circle*{5}}\multiput(244,62)(0,-50){2}{\circle*{5}}%
+\put(113,21){\color{white}\circle*{6}}\put(113,21){\circle{6}}%
+\put(196,12){\color{white}\circle*{6}}\put(196,12){\circle{6}}%
+\put(165,54){\vector(0,-1){18}}\put(174,40){\small bisect}%
+\end{picture}
+
+\small A $P_1$ example. Filled dots are old heights. Open dots are starting heights read from the old segments. The next solve can adjust all interior heights.
+\end{center}
 
 \textbf{Primal initialization.} Let $H$ denote the coarse mesh and $h$ the refined mesh. Evaluate the old FE function $u_H$ at the new fine-grid nodes:
 \[
@@ -455,7 +536,7 @@ After refinement, the previous mesh solution is already a useful approximation t
 \]
 Here $I_h$ is the nodal interpolation operator; coarse vertex values are retained.
 
-\textbf{Dual initialization.} The coarse dual vector $\Lambda_H=A_HU_H-F_H$ consists of \emph{functional coefficients}, so simply interpolating its entries as if they were function values is not appropriate. We instead use the same $L^2$-Riesz reconstruction as in \eqref{eq:riesz}:
+\textbf{Dual initialization.} Each coarse entry $(\Lambda_H)_i$ records the work of the supporting force against one basis function. Refining the mesh changes the width of those functions. To transfer the force, first recover a density on the old grid, then evaluate it at the new nodes and compute its work against the new basis functions. This uses the same $L^2$-Riesz reconstruction as in \eqref{eq:riesz}:
 \[
  \underbrace{\mathsf M_H\boldsymbol\mu_H=\Lambda_H}_{\text{represent the coarse dual as a function}}
  \quad\longrightarrow\quad
@@ -463,204 +544,260 @@ Here $I_h$ is the nodal interpolation operator; coarse vertex values are retaine
  \quad\longrightarrow\quad
  \underbrace{\Lambda_h^0=\mathsf M_h\boldsymbol\mu_h^0}_{\text{recover fine dual}}.
 \]
-Combining both initializations gives the main transfer formula
+For direct interpolation of the coarse shape (the regular-load case), the two transfers read
 \begin{equation}\label{eq:transfer}
  \boxed{U_h^0=I_hU_H,\qquad\Lambda_h^0=\mathsf M_h I_h\mathsf M_H^{-1}\Lambda_H.}
 \end{equation}
 These initial guesses determine the fine contact set
-\[
+\begin{equation}\label{eq:finecontact}
  \mathcal C_h^0=\{i:(\Lambda_h^0)_i-c((U_h^0)_i-(Z_h)_i)>0\}.
-\]
-The subsequent PDAS steps are identical to the cold method: only the \emph{initial contact set} changes.
+\end{equation}
+Algorithm~\ref{alg:pdas} now starts on the fine grid from $\mathcal C_h^0$. It can release a guessed contact node or add a missed one. The three starts compared in Section~\ref{sec:exp-nested} all solve the same fine-grid problem.
 
 \begin{algorithm}[H]
 \caption{Adaptive FEM with $L^2$-nested PDAS initialization}\label{alg:nested}
-\begin{algorithmic}[1]
-\Require Initial mesh $\mathcal T_0$, estimator tolerance $\varepsilon$, $\theta=0.5$
-\State Solve on $\mathcal T_0$ by cold PDAS (Algorithm~\ref{alg:pdas})
-\For{adaptive levels $\ell=0,1,2,\ldots$}
- \State Compute $\lambda_h$ and the indicators $\eta_T$ from \eqref{eq:indicator}
- \If{$\eta_h\leq\varepsilon$} \State \Return current mesh and $u_h$ \EndIf
- \State Mark by the maximum rule; bisect the marked elements
- \State Assemble $A_h,F_h,Z_h,\mathsf M_h$ on the refined mesh
- \State Transfer $(U_H,\Lambda_H)$ by \eqref{eq:transfer} and form $\mathcal C_h^0$
- \State Run PDAS (Algorithm~\ref{alg:pdas}) from $\mathcal C_h^0$
-\EndFor
-\end{algorithmic}
+\textbf{Input:} $\mathcal T_0$, limits $N_{\max},L_{\max},h_{\min}$, $\theta=0.5$.
+\begin{enumerate}
+\item Solve on $\mathcal T_0$ with Algorithm~\ref{alg:pdas} and a cold start.
+\item Reconstruct $\lambda_h$ using \eqref{eq:riesz} and compute $\eta_T$ from \eqref{eq:indicator}.
+\item Mark intervals by the rule in Section~\ref{sec:marking} and propose bisections. Return the current
+solution if nothing is marked or a mesh limit would be violated.
+\item Assemble the fine-grid problem; transfer primal and dual information
+using \eqref{eq:transfer}, then use \eqref{eq:finecontact} to form $\mathcal C_h^0$.
+\item Run Algorithm~\ref{alg:pdas} from $\mathcal C_h^0$ with the optional test in Section~\ref{sec:protocol}. Continue at step 2.
+\end{enumerate}
 \end{algorithm}
-For a controlled comparison, cold PDAS also solves the problem on each \emph{identical} adaptive mesh. We check that both results agree, so initialization affects iterations and timing but not approximation accuracy.
+For the sine--Dirac benchmark, the known sine component is subtracted
+before primal interpolation and restored on the fine mesh. The dual
+transfer is unchanged. The regular-load benchmark uses
+\eqref{eq:transfer} directly.
 
-\sect{Construction of the benchmark problems}\label{sec:benchmarks}
-\subsect{Dirac forces and an exact piecewise-quadratic solution}\label{sec:dirac}
-Choose the constant obstacle $\psi=-1$ and the force
+
+\sect{Benchmark problems and experimental protocol}\label{sec:benchmarks}
+We want to distinguish two reasons a computation might improve: resolving a sharp local feature and representing a smooth curve more accurately. The first test pulls at two individual points, creating corners whose positions the starting grid misses. The second spreads the load across the string. In each case we have a reference shape against which to measure the error.
+
+\subsect{Sine-perturbed Dirac benchmark}\label{sec:sine-dirac}
+First consider the constant-obstacle problem with the singular load
 \[
- f=-6-2\delta_{\alpha}-\delta_{\beta},\qquad\alpha=\tfrac13,\quad\beta=\tfrac23.
+ f_0=-6-2\delta_\alpha-\delta_\beta,\qquad
+ \psi_0=-1,\qquad \alpha=\frac13,\quad\beta=\frac23.
 \]
-Away from the point loads, the free-region equation $-u''=-6$ implies $u''=6$, so the solution is quadratic on each free interval. We seek a contact interval $[\alpha,\gamma]$ where $u=-1$, so $u'=0$ on contact.
-
-\textbf{Left free region.} Write $u(x)=3x^2+ax+b$. The endpoint condition $u(0)=0$ gives $b=0$, and continuity at $\alpha$ gives $u(\alpha)=-1$, hence $a=-4$. Therefore $u(x)=3x^2-4x$ for $x\leq\alpha$. Its derivative changes from $-2$ to $0$ at $\alpha$, so $[u']_{\alpha}=2$, corresponding to the force $-2\delta_{\alpha}$.
-
-\textbf{Right free region.} Leaving contact smoothly at $\gamma$ gives $u(x)=-1+3(x-\gamma)^2$ until $\beta$. A force $-\delta_\beta$ requires $[u']_{\beta}=1$. Write $d=\beta-\gamma$; at $\beta$ we have $u(\beta)=-1+3d^2$, $u'(\beta^-)=6d$, $u'(\beta^+)=6d+1$. Continuing quadratically to $x=1$ and imposing $u(1)=0$ yields
+An exact solution $u_0$ is obtained by matching the quadratic free pieces,
+contact value $-1$, endpoint values, and derivative jumps. With
+$\gamma=1-\sqrt2/3$, the result is
 \[
- 0=(-1+3d^2)+(6d+1)\frac13+3\left(\frac13\right)^2
- =3d^2+2d-\frac13.
-\]
-The positive root is $d=(\sqrt2-1)/3$, hence $\gamma=\beta-d=1-\sqrt2/3$.
-
-Together these conditions determine the exact solution
-\[
- u(x)=\begin{cases}
+ u_0(x)=\begin{cases}
  3x^2-4x,&0\leq x\leq\alpha,\\
  -1,&\alpha<x\leq\gamma,\\
  -1+3(x-\gamma)^2,&\gamma<x\leq\beta,\\
  3x^2+(2\sqrt2-5)x+2-2\sqrt2,&\beta<x\leq1.
  \end{cases}
 \]
-The reaction is $\lambda=6\mathbf1_{(\alpha,\gamma)}$ (a.e.), since $u''=0$ on contact and $u''=6$ elsewhere. At the point forces,
-\[
- [u']_{\alpha}=2,\qquad[u']_{\gamma}=0,\qquad[u']_{\beta}=1.
-\]
-Thus $-u''=f+\lambda$ in distributions. The solution is continuous and piecewise quadratic but its derivative has jumps: a particularly informative test for localized refinement, especially with $P_2$ elements.
+Indeed, $[u_0']_\alpha=2$, $[u_0']_\beta=1$ and
+$\lambda_0=6\mathbf 1_{(\alpha,\gamma)}$ satisfies
+$-u_0''=f_0+\lambda_0$ in distributions.
 
-\subsect{A smooth manufactured bell with an active obstacle}\label{sec:smooth}
-For a second test, we want \emph{no Dirac forces}, a non-polynomial exact solution, nonconstant obstacle, and nonzero reaction. We construct the example backwards: choose the solution and contact region first, then build the obstacle, multiplier and load to satisfy the KKT conditions.
+Why add a sine? Away from the joins, $u_0$ is already exactly the kind of curve a quadratic element can represent. We also want to test how well $P_2$ approximates smooth pieces that are not quadratic. Lifting both the string and the obstacle by the same sine wave keeps their gap exactly the same. The sine vanishes at the ends, and its second derivative tells us how to adjust the load:
 
-\textbf{1. Prescribe the solution.} Choose a negative bell with zero endpoint values,
-\[
- u(x)=-\sin(\pi x)e^{-6(x-1/2)^2},\qquad u(0)=u(1)=0.
-\]
-\textbf{2. Construct the obstacle.} Prescribe contact on $[1/3,2/3]$ using
-\[
- d(x)=\max\{0,1-3x,3x-2\},\qquad\psi(x)=u(x)-d(x)^6.
-\]
-Here $d(x)=0$ exactly on $[1/3,2/3]$ and $d(x)>0$ outside. Thus $u-\psi=d^6\geq0$, with the desired contact set. The factor $3$ makes $d(0)=d(1)=1$, so $\psi(0)=\psi(1)=-1$; the sixth power makes the transitions $C^5$.
+\begin{equation}\label{eq:sine-case}
+ \boxed{\begin{aligned}
+  u(x)&=u_0(x)+\sin(\pi x),\\
+  \psi(x)&=-1+\sin(\pi x),\\
+  f&=-6+\pi^2\sin(\pi x)-2\delta_\alpha-\delta_\beta.
+ \end{aligned}}
+\end{equation}
+The gap $u-\psi=u_0+1$ and the reaction $\lambda=\lambda_0$ are unchanged.
+Thus the exact solution is continuous but has derivative jumps and a
+non-polynomial smooth component. The slope jumps lie inside elements of
+the initial mesh of 20 equal elements. Point loads enter the finite-element
+load vector through evaluations of basis functions, not via ordinary
+$L^2$ quadrature.
 
-\textbf{3. Prescribe the reaction.} We need $\lambda\geq0$ only where $u=\psi$. Set
-\[
- \lambda(x)=\left[36\left(x-\tfrac13\right)\left(\tfrac23-x\right)\right]_+^6,
- \qquad[t]_+=\max\{0,t\}.
-\]
-The factor $36$ normalizes the peak to $\lambda(1/2)=1$. Its support lies inside the contact interval, hence $\lambda(u-\psi)=0$.
+\subsect{Regular-load benchmark}\label{sec:regular}
+The second problem has the constant obstacle $\psi=-1$ and the regular
+forcing
+\begin{equation}\label{eq:regular-case}
+ \boxed{-u''=-12+\sin(\pi x)+\lambda,\qquad u(0)=u(1)=0.}
+\end{equation}
+Here the string and load are symmetric about $x=1/2$. On the left free part, $-u''=-12+\sin(\pi x)$. The string starts at height zero and meets the flat shelf at some unknown point $a$. There its height is $-1$ and its slope is zero: no point force makes a corner there. Integrating the free equation twice gives $u(x)=6x^2+\sin(\pi x)/\pi^2+cx$. The slope condition gives $c=-12a-\cos(\pi a)/\pi$. The height condition leaves one scalar equation,
+\begin{equation}\label{eq:regular-boundary}
+ -6a^2+\frac{\sin(\pi a)-\pi a\cos(\pi a)}{\pi^2}+1=0 .
+\end{equation}
+Its root in $(0,1/2)$ is $a\approx0.42140$. The string rests on the shelf from $a$ to $1-a\approx0.57860$, where the shelf balances the load. Reflecting the left free piece gives the right one. The slope is continuous where the string meets the shelf, even though the curvature changes. The code calls this case \texttt{no\_exact}: the solver finds contact for itself. We use the reference shape afterwards to measure the error.
 
-\textbf{4. Determine the forcing.} Impose equilibrium $-u''=f+\lambda$, giving $f=-u''-\lambda$. With $t=x-1/2$,
-\[
- u''(x)=e^{-6t^2}\left[(12+\pi^2-144t^2)\sin(\pi x)+24\pi t\cos(\pi x)\right].
-\]
-This verifies the continuous KKT conditions by construction. The exact $u$ is $C^\infty$ and non-polynomial; $\psi$, $\lambda$ and $f$ are $C^5$. In contrast with the Dirac benchmark, a $P_2$ element cannot reproduce the smooth exact solution exactly.
+\subsect{Numerical protocol and diagnostics}\label{sec:protocol}
+All final convergence plots use these two benchmarks and the four
+combinations $P_1/P_2\times$ uniform/adaptive refinement. Refinement starts
+from 20 equal elements. For adaptive runs, the maximum-marking rule in
+Section~\ref{sec:indicator} has $\theta=0.5$. For uniform runs all
+intervals are bisected. The same nested $L^2$-Riesz initialization is used
+after every refinement, so the reported approximation comparison isolates
+mesh strategy and polynomial degree.
+
+\textbf{Can the contact iteration stop early?} On each fixed mesh
+$\mathcal T_\ell$, with PDAS iteration index $k$, we monitor
+\begin{equation}\label{eq:inner-stop}
+ \boxed{\eta_\ell^{(k)}/\eta_\ell^{(0)}\leq10^{-3}}
+\end{equation}
+The denominator is the indicator of the initial primal guess on this mesh,
+using its recomputed residual multiplier; the transferred dual determines the
+initial contact set. We accept the candidate only if the discrete KKT safeguard also passes.
+We also terminate when the active set stabilizes and KKT is satisfied.
+
+
+The computational ceiling is $300\,000$ interior degrees of freedom
+(DOFs), with at most 60 refinements. A prospective bisection is rejected
+if it violates the prescribed minimum element length. Ordinarily this
+limit is $10^{-12}$; for the highly accurate regular-load $P_2$ adaptive
+case, it is $2\times10^{-9}$ to avoid over-refinement beyond the verified
+precision regime. The final mesh therefore need not use the full DOF
+budget.
+
+We measure two errors against the reference shape. The first asks how well we recover the slope, including sharp bends. The second asks how well we recover the height:
+\begin{equation}\label{eq:errors}
+ E_{H^1}=\left(\sum_{T\in\Th}\int_T|u'-u_h'|^2\,dx\right)^{1/2},\qquad
+ E_{L^2}=\left(\sum_{T\in\Th}\int_T|u-u_h|^2\,dx\right)^{1/2}.
+\end{equation}
+We integrate with 12-point Gaussian quadrature and split at known
+reference breakpoints. The error evaluation does not determine adaptive
+marking; it is an independent check. The estimator uses four-point
+quadrature on each interval, after $L^2$-Riesz multiplier reconstruction.
 
 \sect{Numerical experiments}\label{sec:experiments}
-For both benchmarks, report the $H^1$-seminorm error and $L^2$ error,
-\[
- E_{H^1}=\left(\sum_{T\in\Th}\int_T|u'-u_h'|^2dx\right)^{1/2},\qquad
- E_{L^2}=\left(\sum_{T\in\Th}\int_T|u-u_h|^2dx\right)^{1/2}.
-\]
-We evaluate errors with 12-point elementwise Gauss--Legendre quadrature, splitting elements at the exact transition points. The smooth load uses 10-point quadrature; the indicator uses four-point quadrature. Error evaluation does not affect the computed meshes.
+\subsect{Uniform and adaptive finite-element errors}\label{sec:conv}
+Start in the left panel of Figure~\ref{fig:h1-final}. The horizontal axis counts unknown heights. The vertical axis measures error in the slope. To compare methods at a similar budget of unknowns, choose an $x$-position and look vertically: the lower curve has the smaller error. Both axes are logarithmic, so equal vertical distances mean equal factors in error.
 
-\subsect{Initial solver check: SciPy L-BFGS-B versus PDAS}
-Before the adaptive studies, we compared PDAS with the L-BFGS-B method implemented in SciPy on a $P_1$ example with $f=-1$, $\psi(x)=x(1-x)-\tfrac32\alpha^2$ and $\alpha=0.2$. Both solve the same constrained minimization problem \eqref{eq:discrete}. Times are medians of seven \emph{wall-clock} runs per mesh (\texttt{perf\_counter}), unlike the later process-CPU timings.
+Near 1,200 unknowns, adaptive $P_2$ reaches a slope error of $2.77\times10^{-6}$ with 1,195 unknowns. The nearest uniform $P_2$ mesh has 1,279 unknowns and error $2.41\times10^{-2}$. Quadratic pieces already fit most of the string well. Placing extra nodes near the corners makes a large difference. In the right panel the load is spread out. The two $P_1$ curves nearly coincide, while allowing each element to bend ($P_2$) improves the slope approximation.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{key/inner_study/budget_300000/final/h1_convergence.png}
+\caption{Final $H^1$-seminorm convergence for the two benchmarks.
+Each dot represents one mesh. Each curve ends at its own size or resolution limit.}
+
+\label{fig:h1-final}
+\end{figure}
+
+Figure~\ref{fig:l2-final} measures the error in the height itself. For point loads the adaptive curves again lie below their uniform counterparts at comparable grid sizes. Look at the red curve in the right panel: on the finest meshes the measured height error levels off near $10^{-13}$. At that scale the precision of the computed and reference values matters. Section~\ref{sec:limits} gives a check that isolates the effect of numerical precision by keeping the mesh fixed.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{key/inner_study/budget_300000/final/l2_convergence.png}
+\caption{$L^2$ errors for the same final experiment protocol.
+All data are retained; very small errors are sensitive to numerical
+accuracy and must not be interpreted as exact asymptotic orders.}
+\label{fig:l2-final}
+\end{figure}
+\FloatBarrier
+
+\subsect{Residual estimator and adaptive marking}
+The vertical axis in Figure~\ref{fig:eta-final} is the combined indicator $\eta_h$ from equation~\eqref{eq:indicator}. It is available during refinement, before we compare with the reference shape. For the point-load problem, concentrating intervals where the indicator is large brings it down sharply. The independently measured slope error in Figure~\ref{fig:h1-final} falls as well. That agreement supports the marking choice for this test.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{key/inner_study/budget_300000/final/estimator_convergence.png}
+\caption{Computed residual estimator versus interior DOFs. The figure
+assesses the \emph{marking quantity}; comparison with
+Figure~\ref{fig:h1-final} assesses its practical usefulness for these
+benchmarks.}
+\label{fig:eta-final}
+\end{figure}
+
+\subsect{Cold, primal-only and \texorpdfstring{$L^2$}{L2}-Riesz nested PDAS}\label{sec:exp-nested}
+To compare the three initializations fairly, we first solve on a common
+coarse grid and then solve on the \emph{same uniform fine grid}, with
+80, 320, or 1280 elements. Cold PDAS starts without transferred data;
+primal-only transfers the coarse solution but computes its fine-grid
+residual multiplier; Riesz transfers both the coarse primal solution and
+the $L^2$-reconstructed multiplier, as in Section~\ref{sec:nested}.
+The table counts contact iterations. All three starts use the same stopping tests. The repository also records fine-grid timings (medians of three runs, including transfer and excluding the common coarse solve).
+
 \begin{table}[!htbp]\centering\small
-\begin{tabular}{@{}rrrrrr@{}}\toprule
-Elements & DOFs & L-BFGS-B iter. & PDAS iter. & L-BFGS-B [ms] & PDAS [ms]\\\midrule
-20 & 19 & 12 & 4 & 0.266 & 0.074\\
-80 & 79 & 35 & 13 & 0.901 & 0.376\\
-320 & 319 & 169 & 51 & 9.322 & 7.534\\\bottomrule
+\begin{tabular}{@{}llrrr@{}}\toprule
+Benchmark & Element & Cold & Primal-only & Riesz \\\midrule
+Sine--Dirac & $P_1$ & 234 & 177 & \textbf{5}\\
+Sine--Dirac & $P_2$ & 461 & 355 & \textbf{9}\\
+Regular load & $P_1$ & 243 & 51 & \textbf{5}\\
+Regular load & $P_2$ & 487 & \textbf{3} & 9\\\bottomrule
 \end{tabular}
-\caption{Selected measurements from \texttt{experiments/validation/solvers/benchmark\_solvers.py}. At 320 elements the discrete solutions differ by $8.82\times10^{-8}$; this is an independent solver check, not a broad speed comparison.}\label{tab:scipy}
+\caption{PDAS iterations on the finest tested uniform mesh (1280 elements;
+$1279$ interior DOFs for $P_1$, $2559$ for $P_2$). Bold indicates the
+smallest iteration count within a row.}
+\label{tab:pdas-final}
 \end{table}
 
-\subsect{Smooth benchmark: approximation accuracy}\label{sec:exp-smooth}
-For the problem in Section~\ref{sec:smooth}, uniform $P_1$ converges
-approximately as $N^{-1}$ in $H^1$ and $N^{-2}$ in $L^2$; uniform $P_2$
-gives $N^{-2}$ and $N^{-3}$. The adaptive curves have similar slopes,
-while the reconstructed multiplier agrees closely with the exact reaction.
+Read the first row across. On exactly the same fine grid the cold start takes 234 iterations. Carrying over the shape saves 57. Also carrying over the supporting force brings the count down to five. The last row shows why it pays to test both transfers: for regular-load $P_2$ the shape alone gives the best start (three iterations, versus nine with the force). For every comparison the final nodal heights agreed with the cold solution to within $10^{-8}$.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.89\linewidth]{validation/benchmarks/smooth_bell_solution.png}
-\caption{Smooth benchmark (Section~\ref{sec:smooth}): exact and FE solutions,
-obstacle, and exact versus reconstructed multiplier.}\label{fig:smooth-solution}
-\end{figure}
-\vspace{-5pt}
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.89\linewidth]{validation/benchmarks/smooth_bell_convergence.png}
-\caption{Smooth $P_1/P_2$ errors versus DOFs: uniform and adaptive refinement
-with reference slopes.}\label{fig:smooth-conv}
+\includegraphics[width=0.92\linewidth]{key/inner_study/budget_300000/final/initialization_comparison.png}
+\caption{Number of PDAS iterations for cold, primal-only, and
+$L^2$-Riesz nested starts on identical fine meshes. The common coarse
+solve is not part of the timing comparison.}
+\label{fig:warm-final}
 \end{figure}
 \FloatBarrier
 
-\subsect{Dirac benchmark: uniform versus adaptive refinement}\label{sec:exp-dirac}
-For the singular problem in Section~\ref{sec:dirac}, uniform P1 and P2 produce observed rates near $N^{-1/2}$ in $H^1$ and $N^{-3/2}$ in $L^2$. Local refinement reduces the errors much faster for the piecewise-quadratic $P_2$ solution. These are benchmark-specific observations; unusually steep adaptive slopes are not claimed as general orders.
-\begin{figure}[!htbp]\centering
-\includegraphics[width=0.87\linewidth]{validation/estimators/p1_dirac_residual_adaptive_vs_uniform.png}
-\caption{Dirac $P_1$: uniform and residual-adaptive errors, computed by elementwise Gaussian quadrature.}\label{fig:dirac-p1}
-\end{figure}
-\begin{figure}[!htbp]\centering
-\includegraphics[width=0.87\linewidth]{validation/estimators/p2_dirac_residual_adaptive_vs_uniform.png}
-\caption{Dirac $P_2$: adaptive refinement concentrates DOFs near the derivative jumps and transition points.}\label{fig:dirac-p2}
-\end{figure}
-\FloatBarrier
+\subsect{Inner stopping and floating-point limitations}\label{sec:limits}
+All 174 recorded final mesh solves stopped through \emph{active-set
+stability}. None reached the requested inner indicator reduction
+$10^{-3}$ before stabilization; the smallest recorded ratio was about
+$0.212$. The indicator also measures spatial discretization effects,
+which remain after PDAS has solved the discrete problem. Thus the tested
+inner criterion did not save iterations.
 
-\clearpage
-\subsect{Efficiency of nested PDAS on identical adaptive meshes}\label{sec:exp-nested}
-Now compare \emph{cold-start} and \emph{$L^2$-nested} PDAS on the same mesh at each adaptive level (a level is one mesh, before the next refinement). For each method and each level, the solver is timed five times with \texttt{process\_time()}; one plotted CPU point is the \emph{median of those five timings}, not a median across mesh levels. The coarse initial solve is charged to both methods.
-
-For each benchmark, we also report the ratio
-\[
- \text{solver-stage speedup}=
- \frac{\sum_{\ell=0}^L\operatorname{median}_{r=1,\ldots,5} t^{\mathrm{cold}}_{\ell,r}}
- {\sum_{\ell=0}^L\operatorname{median}_{r=1,\ldots,5} t^{\mathrm{nested}}_{\ell,r}}.
-\]
-Here $L+1$ is the number of mesh levels, $N$ is the number of interior FE degrees of freedom, and the ``final iterations'' refer to the \emph{last} adaptive mesh. Nested timings include primal/dual transfer and PDAS; neither method's timing includes assembly, the indicator, marking, refinement or error quadrature. The methods agree on the discrete solution (within $10^{-8}$), so accuracy curves are common to both.
-
-\begin{table}[H]\centering\small
-\begin{tabular}{@{}llrrrrrr@{}}\toprule
-Case & FEM & Levels & Final $N$ & Final iter. cold/nested & Cold [s] & Nested [s] & Speedup\\\midrule
-Smooth & $P_1$ & 9 & 1055 & $90/2$ & 0.05682 & 0.00688 & $8.3\times$\\
-Smooth & $P_2$ & 8 & 427 & $86/15$ & 0.05336 & 0.01084 & $4.9\times$\\
-Dirac & $P_1$ & 18 & 1071 & $245/5$ & 0.54651 & 0.01993 & $27.4\times$\\
-Dirac & $P_2$ & 21 & 129 & $51/4$ & 0.05620 & 0.00644 & $8.7\times$\\\bottomrule
-\end{tabular}
-\caption{Sum of per-mesh median solver-stage CPU times (five repeats per method and mesh), with the final-mesh PDAS iteration counts.}\label{tab:nested}
-\end{table}
-
-In both test problems, nested initialization reduces the iteration count and measured solver cost.
-These speedups compare the two initializations \emph{within} each benchmark and polynomial degree;
-they are not end-to-end runtime gains or claims about different solver implementations.
-Figures~\ref{fig:smooth-nested} and~\ref{fig:dirac-nested} show the full mesh histories.
+On extremely fine meshes, numerical errors can obscure the improvement
+expected from refinement. Subtracting nearly equal numbers loses
+significant digits, and poorly conditioned linear systems can amplify
+rounding errors. We therefore used more stable formulas, computed the
+gap to the obstacle directly, and increased the precision of critical
+linear solves. For the regular-load $P_1$ problem at 276191 DOFs,
+changing only the linear solve on the same mesh and contact set reduced
+the $L^2$ error from $4.41\times10^{-10}$ to $8.61\times10^{-12}$.
 
 
-\FloatBarrier
-% Both six-panel efficiency comparisons are presented on equally oriented
-% landscape pages, at the same scale, to keep every axis and legend legible.
-\clearpage
-\begin{landscape}
-\thispagestyle{plain}
-\begin{center}
-\includegraphics[width=0.98\linewidth,height=0.89\textheight,keepaspectratio]{key/pdas_scaling/smooth_nested_adaptive_p1_p2.png}
-\captionof{figure}{Smooth benchmark (Section~\ref{sec:smooth}):
- cold versus $L^2$-nested PDAS on identical adaptive meshes for $P_1$ and $P_2$.}
-\label{fig:smooth-nested}
-\end{center}
-\end{landscape}
-\begin{landscape}
-\thispagestyle{plain}
-\begin{center}
-\includegraphics[width=0.98\linewidth,height=0.89\textheight,keepaspectratio]{key/pdas_scaling/dirac_nested_pdas_p1_p2_summary.png}
-\captionof{figure}{Dirac benchmark (Section~\ref{sec:dirac}):
- cold versus $L^2$-nested PDAS on identical adaptive meshes for $P_1$ and $P_2$.
- Dashed reference guides and dotted finite-range fitted slopes have different meanings.}
-\label{fig:dirac-nested}
-\end{center}
-\end{landscape}
 
-\clearpage
-\sect{Conclusion}
-% Placeholder intentionally empty until the project is completed.
-\subsect{Future work}
-% Placeholder intentionally empty.
-\subsect{Use of AI}
-% Placeholder intentionally empty.
-\subsect{Open questions}
-% Placeholder intentionally empty.
+\sect{Conclusion}\label{sec:conclusion}
+The same contact condition serves two purposes. It tells the solver which nodal values to fix, and it gives us a way to check whether the computed solution is in equilibrium. The experiments answer the three opening questions.
+
+\textbf{Where should we refine?} In the point-load test, adaptive $P_2$ gave a slope error of $2.77\times10^{-6}$ with 1195 unknowns. Uniform $P_2$ gave $2.41\times10^{-2}$ with 1279. Extra nodes near a sharp bend made a large difference at a similar problem size. Under the smooth load, the two $P_1$ slope-error curves nearly coincided.
+
+\textbf{What should we transfer?} On the fine grid with 1280 intervals, the point-load $P_1$ solve took 234 iterations from a cold start, 177 after transferring the shape and five after transferring both shape and force. With a smooth load and $P_2$, the shape alone gave the best start: three iterations compared with nine when the force was also transferred.
+
+\textbf{When should the contact iteration stop?} In all 174 mesh solves, the contact set stabilized before the indicator test could save an iteration. Even after the discrete contact problem is solved, a coarse mesh can still contribute a substantial spatial error.
+
+\subsect{Possible extensions}
+Could we stop the contact iteration as soon as its error is small compared with the mesh error? A useful stopping rule would have to control both feasibility and the force balance. A second extension is a moving obstacle or a load that changes over time. With implicit time stepping, each time step requires a new contact solve. The previous shape and support forces provide starting guesses, much as in American option pricing, where the value must stay above the immediate exercise payoff.
+
+\Needspace{9\baselineskip}
+\subsect{Use of computational tools and AI assistance}
+The calculations use Python, NumPy and SciPy. Matplotlib produced the four experimental plots from the repository data. ChatGPT drafted and revised explanatory text, including the study questions, introduction and mathematical explanations, and helped create the LaTeX sketches. It also assisted with coding, debugging, finding references and comparing formulas and reported numbers with the recorded experiments.
+
+\subsect{Reproducibility}
+The \href{https://github.com/victor-sieber/obstacle-problem-fem/tree/20fa96e657c0d67721bd84887e3c8a3d6f39df71}{project repository at commit \texttt{20fa96e}} contains the data, code and four plots. From its root, check the eight series and regenerate the figures with
+\begin{verbatim}
+python -m experiments.key.final_delivery check
+python -m experiments.key.final_delivery plots
+\end{verbatim}
+See \texttt{FINAL\_EXPERIMENTS.md} for the full protocol and independent solver checks.
+
+\begin{thebibliography}{9}
+\bibitem{contact} N. Kikuchi and J. T. Oden, \emph{Contact Problems in Elasticity:
+A Study of Variational Inequalities and Finite Element Methods}, SIAM, 1988.
+Chapter 2 treats unilateral contact. \url{https://doi.org/10.1137/1.9781611970845}.
+\bibitem{braess} D. Braess, \emph{Finite Elements: Theory, Fast Solvers, and
+Applications in Solid Mechanics}, 3rd ed., Cambridge University Press, 2007.
+Chapter II develops conforming finite elements.
+\url{https://doi.org/10.1017/CBO9780511618635}.
+\bibitem{hintermuller} M. Hinterm\"uller, K. Ito, and K. Kunisch,
+``The primal-dual active set strategy as a semismooth Newton method,''
+\emph{SIAM Journal on Optimization} 13(3) (2002), 865--888. \url{https://doi.org/10.1137/S1052623401383558}.
+\bibitem{adaptive} D. Braess, C. Carstensen and R. H. W. Hoppe,
+\emph{Convergence analysis of a conforming adaptive finite element method for an obstacle problem},
+Numerische Mathematik 107 (2007), 455--471.
+\url{https://doi.org/10.1007/s00211-007-0098-6}.
+\bibitem{verfurth} R. Verf\"urth, \emph{A Posteriori Error Estimation Techniques for Finite Element Methods}, Oxford University Press, 2013.
+\url{https://doi.org/10.1093/acprof:oso/9780199679423.001.0001}.
+\end{thebibliography}
+
 \end{document}
